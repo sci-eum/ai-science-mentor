@@ -4,7 +4,18 @@ import arxiv
 import requests
 from supabase import create_client, Client
 
+# ==========================================
+# 1. 페이지 및 기본 설정
+# ==========================================
 st.set_page_config(page_title="AI 과학 조교", page_icon="🧬", layout="wide")
+
+def local_css(file_name):
+    try:
+        with open(file_name, encoding="utf-8") as f:
+            st.markdown(f'<style>{f.read()}</style>', unsafe_allow_html=True)
+    except: pass
+
+local_css("style.css")
 
 @st.cache_resource
 def init_connection():
@@ -12,312 +23,440 @@ def init_connection():
         url = st.secrets["SUPABASE_URL"]
         key = st.secrets["SUPABASE_KEY"]
         return create_client(url, key)
-    except Exception as e:
-        st.error("데이터베이스 연결 정보를 찾을 수 없습니다.")
-        return None
+    except: return None
 
 supabase: Client = init_connection()
 
-if supabase:
-    st.sidebar.success("🟢 데이터베이스 연결 완료!")
-else:
-    st.sidebar.error("🔴 데이터베이스 연결 실패!")
+# ==========================================
+# 2. 전역 상태(Session State) 초기화
+# ==========================================
+states = [
+    'user', 'role', 'school', 'paper_results', 'seen_titles', 'search_page', 
+    'ai_topics_list', 'past_topics', 'generated_manual', 'past_manuals', 'current_idea', 'current_sort'
+]
+for s in states:
+    if s not in st.session_state: 
+        if s in ['paper_results', 'past_topics', 'past_manuals', 'ai_topics_list']: 
+            st.session_state[s] = []
+        elif s == 'seen_titles': 
+            st.session_state[s] = set()
+        else: 
+            st.session_state[s] = None
 
-st.sidebar.title("🧬 AI 과학 조교 메뉴")
-menu = st.sidebar.radio("기능 선택:", ["🏠 메인", "🔍 논문 찾기 (A루트)", "🧪 실험 설계 (B루트)", "🗄️ 내 연구 노트"])
+# ==========================================
+# 👤 3. 사이드바 (프로필 및 계정 관리 - 폼 적용 완료)
+# ==========================================
+st.sidebar.markdown("<br>", unsafe_allow_html=True)
+
+if not st.session_state.user:
+    st.sidebar.markdown("""
+        <div class="profile-container">
+            <div class="avatar-circle">?</div>
+            <div class="profile-name">반갑습니다!</div>
+            <p style="font-size:0.8rem; opacity:0.7;">로그인 후 연구를 시작하세요.</p>
+        </div>
+    """, unsafe_allow_html=True)
+    
+    t_login, t_signup = st.sidebar.tabs(["로그인", "회원가입"])
+    
+    with t_login:
+        with st.form("login_form"):
+            l_email = st.text_input("이메일")
+            l_pw = st.text_input("비밀번호", type="password")
+            login_submit = st.form_submit_button("로그인", use_container_width=True)
+            
+            if login_submit:
+                try:
+                    res = supabase.auth.sign_in_with_password({"email": l_email, "password": l_pw})
+                    st.session_state.user = res.user
+                    st.rerun()
+                except Exception as e: 
+                    st.error("로그인 실패: 정보를 확인해 주세요.")
+            
+    with t_signup:
+        with st.form("signup_form"):
+            s_email = st.text_input("새 이메일")
+            s_pw = st.text_input("새 비번 (6자+)", type="password")
+            signup_submit = st.form_submit_button("가입", use_container_width=True)
+            
+            if signup_submit:
+                try:
+                    supabase.auth.sign_up({"email": s_email, "password": s_pw})
+                    st.success("가입 완료! 로그인 탭에서 로그인 해주세요.")
+                except Exception as e: 
+                    st.error(f"가입 실패: {e}")
+else:
+    if not st.session_state.school:
+        try:
+            res = supabase.table("user_profiles").select("*").eq("id", st.session_state.user.id).execute()
+            if res.data:
+                st.session_state.role = res.data[0]['role']
+                st.session_state.school = {"name": res.data[0]['school_name'], "code": res.data[0]['school_code']}
+        except: pass
+
+    role_label = st.session_state.role if st.session_state.role else "연구원"
+    school_label = st.session_state.school['name'] if st.session_state.school else "프로필 미설정"
+    avatar_icon = "🎓" if "학생" in role_label else "🔬"
+    
+    st.sidebar.markdown(f"""
+        <div class="profile-container">
+            <div class="role-badge">{role_label}</div>
+            <div class="avatar-circle">{avatar_icon}</div>
+            <div class="profile-name">{st.session_state.user.email.split('@')[0]}</div>
+            <div class="profile-school">{school_label}</div>
+        </div>
+    """, unsafe_allow_html=True)
+    
+    if st.sidebar.button("로그아웃", use_container_width=True):
+        supabase.auth.sign_out()
+        for s in ['user', 'role', 'school']: st.session_state[s] = None
+        st.rerun()
 
 st.sidebar.markdown("---")
-st.sidebar.write("⚙️ AI 연결 설정")
-api_key = st.sidebar.text_input("발급받은 Gemini API Key를 붙여넣으세요:", type="password")
-
-@st.cache_resource
-def load_ai_model(api_key):
-    genai.configure(api_key=api_key)
-    for m in genai.list_models():
-        if 'generateContent' in m.supported_generation_methods:
-            return genai.GenerativeModel(m.name)
-    return None
-
+api_key = st.sidebar.text_input("Gemini API Key:", type="password")
 model = None
+
+# ✨ AI 모델 자동 탐색
 if api_key:
     try:
-        model = load_ai_model(api_key)
-    except Exception as e:
-        st.sidebar.error("API 키를 확인해 주세요.")
-
-# --- 전역 상태(단기 기억 상자) 초기화 ---
-if 'user' not in st.session_state: st.session_state.user = None
-if 'paper_results' not in st.session_state: st.session_state.paper_results = []
-if 'seen_titles' not in st.session_state: st.session_state.seen_titles = set()
-if 'search_page' not in st.session_state: st.session_state.search_page = 0      # 논문 더보기 페이지
-if 'current_sort' not in st.session_state: st.session_state.current_sort = None # 현재 검색 정렬 기준
-
-if 'ai_topics' not in st.session_state: st.session_state.ai_topics = None
-if 'past_topics' not in st.session_state: st.session_state.past_topics = []     # ✨ AI 이전 추천 주제 기억
-
-if 'generated_manual' not in st.session_state: st.session_state.generated_manual = None
-if 'past_manuals' not in st.session_state: st.session_state.past_manuals = []   # ✨ AI 이전 매뉴얼 기억
-if 'current_idea' not in st.session_state: st.session_state.current_idea = None
+        genai.configure(api_key=api_key)
+        for m in genai.list_models():
+            if 'generateContent' in m.supported_generation_methods:
+                model = genai.GenerativeModel(m.name)
+                break
+    except Exception as e: 
+        st.sidebar.error(f"API 설정 오류: {e}")
 
 # ==========================================
-# 🔍 A루트: 다중 소스 통합 검색
+# 🕹️ 상단 네비게이션
 # ==========================================
-if menu == "🔍 논문 찾기 (A루트)":
-    st.title("🔍 글로벌 & 국내 논문 통합 검색")
-    keyword = st.text_input("검색 키워드 (예: Aspirin, 미세플라스틱)")
-    tab1, tab2 = st.tabs(["🎯 관련도순 검색", "📅 최신순 검색"])
+st.write("") 
 
-    # ✨ 검색 함수 업그레이드: '더 보기(append)' 기능 추가!
+with st.container():
+    st.markdown('<span class="top-menu-marker"></span>', unsafe_allow_html=True)
+    menu = st.radio(
+        "메뉴 선택", 
+        ["메인", "논문 찾기", "실험 설계", "내 연구 노트"],
+        horizontal=True, 
+        label_visibility="collapsed" 
+    )
+st.markdown("---")
+
+# ==========================================
+# 🏠 1. 메인 화면
+# ==========================================
+if menu == "메인":
+    st.markdown("""
+        <div class="hero-container">
+            <h1 style="color:white; font-size:3rem; font-weight:900;">🧬 AI SCIENCE ADVISOR</h1>
+            <p style="color:rgba(255,255,255,0.8); font-size:1.2rem;">세상을 바꾸는 당신의 위대한 탐구, AI가 지도를 그려드립니다.</p>
+        </div>
+    """, unsafe_allow_html=True)
+    c1, c2, c3 = st.columns(3)
+    features = [
+        ("🔍", "논문 검색", "글로벌 DB 통합 탐색"), 
+        ("🧪", "실험 설계", "AI 기반 안전 매뉴얼"), 
+        ("🗄️", "연구 노트", "나만의 탐구 포트폴리오")
+    ]
+    for col, (i, t, d) in zip([c1, c2, c3], features):
+        col.markdown(f"<div style='background:white; padding:2rem; border-radius:20px; text-align:center; box-shadow:0 10px 20px rgba(0,0,0,0.05);'><h3>{i} {t}</h3><p>{d}</p></div>", unsafe_allow_html=True)
+
+# ==========================================
+# 🔍 2. 논문 찾기 (A루트)
+# ==========================================
+elif menu == "논문 찾기":
+    
+    with st.container():
+        st.markdown('<span class="search-marker"></span>', unsafe_allow_html=True)
+        st.markdown("<h2 style='text-align: center; color: white; font-weight: 800; margin-bottom: 0.5rem;'>🔍 스마트 논문 탐색</h2>", unsafe_allow_html=True)
+        
+        sort_choice = st.radio("정렬 방식", ["🎯 관련도순", "📅 최신순"], horizontal=True, label_visibility="collapsed", key="search_sort")
+        st.write("") 
+        
+        col1, col2, col3, col4 = st.columns([1.5, 6, 1.5, 1.5]) 
+        with col2:
+            keyword = st.text_input("검색어 입력", placeholder="예: 그래핀 합성, 미세플라스틱, 초전도체...", label_visibility="collapsed")
+        with col3:
+            search_clicked = st.button("검색", use_container_width=True, type="primary")
+
     def perform_search(sort_type, append=False):
         if not keyword:
             st.warning("키워드를 입력해 주세요.")
             return
             
         if not append:
-            st.session_state.search_page = 0
-            st.session_state.paper_results = []
-            st.session_state.seen_titles = set()
-            st.session_state.ai_topics = None
-            st.session_state.past_topics = [] # 새 검색어면 이전 주제 기억 초기화
-        else:
+            st.session_state.search_page, st.session_state.paper_results, st.session_state.seen_titles = 0, [], set()
+            st.session_state.ai_topics_list, st.session_state.past_topics = [], []
+        else: 
             st.session_state.search_page += 1
 
         st.session_state.current_sort = sort_type
         page = st.session_state.search_page
 
-        with st.spinner(f'{sort_type}으로 논문을 {"추가 " if append else ""}수집하는 중...'):
+        with st.spinner(f'논문을 수집하는 중...'):
             papers_info = []
             def normalize_title(t): return ''.join(c.lower() for c in t if c.isalnum())
 
-            # 1. ArXiv 검색 (페이지 계산해서 다음 3개 가져오기)
             try:
                 arxiv_max = (page + 1) * 3
-                search = arxiv.Search(query=keyword, max_results=arxiv_max, sort_by=arxiv.SortCriterion.Relevance if sort_type == "관련도순" else arxiv.SortCriterion.SubmittedDate)
+                search = arxiv.Search(
+                    query=keyword, 
+                    max_results=arxiv_max, 
+                    sort_by=arxiv.SortCriterion.Relevance if sort_type == "관련도순" else arxiv.SortCriterion.SubmittedDate
+                )
                 client = arxiv.Client()
-                results = list(client.results(search))
-                new_arxivs = results[page * 3 : arxiv_max] # 딱 새로 추가된 페이지만 자르기
-                
+                new_arxivs = list(client.results(search))[page * 3 : arxiv_max] 
                 for r in new_arxivs:
-                    norm_title = normalize_title(r.title)
-                    if norm_title not in st.session_state.seen_titles:
-                        st.session_state.seen_titles.add(norm_title)
-                        papers_info.append({"source": "ArXiv 🔵", "title": r.title, "authors": ", ".join([a.name for a in r.authors]), "year": r.published.year, "summary": r.summary.replace('\n', ' ')[:300] + '...', "url": r.pdf_url})
+                    if normalize_title(r.title) not in st.session_state.seen_titles:
+                        st.session_state.seen_titles.add(normalize_title(r.title))
+                        papers_info.append({"source": "ArXiv", "title": r.title, "authors": ", ".join([a.name for a in r.authors]), "year": r.published.year, "summary": r.summary.replace('\n', ' '), "url": r.pdf_url})
             except: pass
 
-            # 2. Crossref 검색 (offset을 이용해 다음 4개 가져오기)
             try:
-                crossref_offset = page * 4
-                url = f"https://api.crossref.org/works?query={keyword}&select=title,abstract,URL,author,published&rows=4&offset={crossref_offset}&sort={'relevance' if sort_type == '관련도순' else 'published'}"
-                response = requests.get(url, timeout=5).json()
-                for item in response['message']['items']:
+                url = f"https://api.crossref.org/works?query={keyword}&select=title,abstract,URL,author,published&rows=4&offset={page * 4}&sort={'relevance' if sort_type == '관련도순' else 'published'}"
+                for item in requests.get(url, timeout=5).json()['message']['items']:
                     title = item.get('title', [''])[0]
-                    if title:
-                        norm_title = normalize_title(title)
-                        if norm_title not in st.session_state.seen_titles:
-                            st.session_state.seen_titles.add(norm_title)
-                            year = item.get('published', {}).get('date-parts', [[None]])[0][0] or "연도 미상"
-                            authors = ", ".join([f"{a.get('given', '')} {a.get('family', '')}".strip() for a in item.get('author', []) if f"{a.get('given', '')} {a.get('family', '')}".strip()]) or "정보 없음"
-                            papers_info.append({"source": "Crossref 🔴", "title": title, "authors": authors, "year": year, "summary": item.get('abstract', '요약 없음')[:300] + '...', "url": item.get('URL', '')})
+                    if title and normalize_title(title) not in st.session_state.seen_titles:
+                        st.session_state.seen_titles.add(normalize_title(title))
+                        year = item.get('published', {}).get('date-parts', [[None]])[0][0] or "연도 미상"
+                        authors = ", ".join([f"{a.get('given', '')} {a.get('family', '')}".strip() for a in item.get('author', []) if f"{a.get('given', '')} {a.get('family', '')}".strip()]) or "정보 없음"
+                        summary_raw = item.get('abstract', '요약이 제공되지 않는 논문입니다.')
+                        summary_clean = summary_raw.replace('<jats:p>', '').replace('</jats:p>', '').replace('<jats:title>', '').replace('</jats:title>', '')
+                        papers_info.append({"source": "Crossref", "title": title, "authors": authors, "year": year, "summary": summary_clean, "url": item.get('URL', '')})
             except: pass
             
-            st.session_state.paper_results.extend(papers_info) # 기존 결과 뒤에 새 결과 이어붙이기!
-            
+            st.session_state.paper_results.extend(papers_info) 
             if not st.session_state.paper_results: st.warning("결과가 없습니다.")
-            else: st.success(f"현재까지 총 {len(st.session_state.paper_results)}건의 논문을 불러왔습니다.")
 
-    with tab1:
-        if st.button("관련도순으로 결과 보기"): perform_search("관련도순", append=False)
-    with tab2:
-        if st.button("최신순으로 결과 보기"): perform_search("최신순", append=False)
+    sort_type_str = "관련도순" if "관련도순" in sort_choice else "최신순"
+    if search_clicked:
+        perform_search(sort_type_str, False)
 
     if st.session_state.paper_results:
-        saved_urls = []
-        if st.session_state.get('user'):
-            try:
-                res = supabase.table("saved_papers").select("url").eq("user_id", st.session_state.user.id).execute()
-                saved_urls = [item['url'] for item in res.data]
-            except: pass
+        st.write("") 
+        st.success(f"총 {len(st.session_state.paper_results)}건의 논문을 찾았습니다! 🎉")
+        
+        res_col, ai_col = st.columns([7, 3])
 
-        for i, paper in enumerate(st.session_state.paper_results):
-            with st.expander(f"[{paper['source']}] {paper['title']}"):
-                st.write(f"**👨‍🔬 저자:** {paper['authors']} | **📅 발행:** {paper['year']}년")
-                st.write(f"**📝 요약:** {paper['summary']}")
-                col1, col2 = st.columns([4, 1])
-                with col1: st.link_button("📄 원문 보기", paper['url'])
-                with col2:
-                    if not st.session_state.get('user'):
-                        st.button("☆ 로그인 후 저장", key=f"dis_{paper['url']}", disabled=True)
-                    else:
-                        if paper['url'] in saved_urls:
-                            if st.button("★ 저장됨", key=f"del_{paper['url']}"):
-                                supabase.table("saved_papers").delete().eq("user_id", st.session_state.user.id).eq("url", paper['url']).execute()
-                                st.rerun()
-                        else:
-                            if st.button("☆ 저장하기", key=f"add_{paper['url']}"):
-                                data = {"user_id": st.session_state.user.id, "title": paper['title'], "authors": paper['authors'], "year": str(paper['year']), "summary": paper['summary'], "url": paper['url'], "source": paper['source']}
-                                supabase.table("saved_papers").insert(data).execute()
-                                st.rerun()
-        
-        # ✨ 논문 더 보기 버튼
-        st.divider()
-        if st.button(f"🔄 {st.session_state.current_sort} 다음 결과 더 불러오기 (논문 7개 추가)"):
-            perform_search(st.session_state.current_sort, append=True)
-            st.rerun()
-        
-        # ✨ AI 주제 추천 (기억 상자 활용하여 겹치지 않게!)
-        if model:
-            st.divider()
-            st.subheader("💡 AI 과학 조교의 탐구 주제 제안")
+        # 💡 [우측 영역] AI 탐구 주제 제안 (개별 토글 + 누적형)
+        with ai_col:
+            st.markdown("### 💡 AI 탐구 주제 제안")
             
-            # 버튼 이름이 처음엔 '추천받기', 다음엔 '다른 주제'로 바뀜
-            btn_text = "✨ 이 논문들을 바탕으로 탐구 주제 추천받기" if not st.session_state.ai_topics else "🔄 기존과 겹치지 않는 새로운 주제 추천받기"
-            
-            if st.button(btn_text):
-                with st.spinner("이전 추천 기록을 피해서 새로운 주제를 생각하는 중..."):
-                    prompt = f"다음 논문들을 참고해 고등학생용 연구 주제 2개를 한국어로 제안해줘: {[p['title'] for p in st.session_state.paper_results[-7:]]}"
-                    
-                    # 이전에 추천했던 주제가 있다면 프롬프트에 추가해서 경고!
-                    if st.session_state.past_topics:
-                        prompt += f"\n\n[매우 중요] 다음은 이전에 네가 이미 추천했던 내용들이야. 이 내용들과 절대로 겹치지 않는 완전히 새로운 접근 방식의 주제를 제안해줘:\n" + "\n".join(st.session_state.past_topics)
-                    
-                    try:
-                        response = model.generate_content(prompt).text
-                        st.session_state.ai_topics = response
-                        st.session_state.past_topics.append(response) # 방금 추천한 것도 과거 기억에 추가!
-                    except Exception as e:
-                        st.error("주제 추천 중 에러가 발생했어요.")
-            
-            if st.session_state.ai_topics:
-                st.info(st.session_state.ai_topics)
-                if st.session_state.get('user'):
-                    if st.button("💾 이 추천 주제를 내 연구 노트에 저장"):
+            if not model:
+                st.warning("👈 왼쪽 메뉴에서 API Key를 입력해주세요.")
+            else:
+                btn_text = "✨ 주제 추천받기" if not st.session_state.ai_topics_list else "🔄 새로운 주제 추가로 받기"
+                
+                if st.button(btn_text, use_container_width=True, type="primary"):
+                    with st.spinner("논문을 분석 중입니다..."):
+                        prompt = f"""
+                        다음 논문들을 참고해 창의적인 고등학생용 연구 주제 2개를 제안해줘.
+                        반드시 아래 형식을 정확히 지켜줘. (파싱을 위해 중요함)
+                        
+                        [주제 시작]
+                        제목: 주제 제목
+                        내용: 탐구 동기, 실험 방법, 기대 효과 등 상세 설명
+                        [주제 종료]
+                        
+                        논문 리스트: {[p['title'] for p in st.session_state.paper_results[:5]]}
+                        """
+                        if st.session_state.past_topics: 
+                            prompt += f"\n[중요] 이전 추천들과 절대 겹치지 않게 해:\n" + "\n".join(st.session_state.past_topics)
+                        
                         try:
-                            supabase.table("saved_topics").insert({"user_id": st.session_state.user.id, "topic_content": st.session_state.ai_topics}).execute()
-                            st.toast("✅ 주제가 연구 노트에 저장되었습니다!")
-                        except Exception as e:
-                            st.error(f"저장 실패: {e}")
-                else:
-                    st.warning("로그인하시면 이 주제를 저장할 수 있습니다.")
+                            response = model.generate_content(prompt).text
+                            st.session_state.past_topics.append(response)
+                            
+                            raw_topics = response.split("[주제 시작]")
+                            for rt in raw_topics:
+                                if "[주제 종료]" in rt:
+                                    clean_t = rt.split("[주제 종료]")[0].strip()
+                                    lines = clean_t.split('\n')
+                                    t_title = lines[0].replace("제목:", "").strip()
+                                    t_content = clean_t.replace(lines[0], "").replace("내용:", "").strip()
+                                    st.session_state.ai_topics_list.append({"title": t_title, "content": t_content})
+                        except Exception as e: 
+                            st.error(f"오류가 발생했습니다: {e}")
+
+            if st.session_state.ai_topics_list:
+                saved_topic_contents = []
+                if st.session_state.user:
+                    try:
+                        res = supabase.table("saved_topics").select("topic_content").eq("user_id", st.session_state.user.id).execute()
+                        saved_topic_contents = [item['topic_content'] for item in res.data]
+                    except: pass
+
+                for idx, topic in enumerate(reversed(st.session_state.ai_topics_list)):
+                    with st.expander(f"📌 {topic['title']}", expanded=False):
+                        st.write(topic['content'])
+                        
+                        if st.session_state.user:
+                            full_topic_text = f"제목: {topic['title']}\n내용: {topic['content']}"
+                            is_saved = any(topic['title'] in s for s in saved_topic_contents)
+                            
+                            col_btn, col_empty = st.columns([1, 1])
+                            with col_btn:
+                                if is_saved:
+                                    if st.button("★ 저장됨", key=f"unsave_t_{idx}", use_container_width=True):
+                                        supabase.table("saved_topics").delete().eq("user_id", st.session_state.user.id).ilike("topic_content", f"%{topic['title']}%").execute()
+                                        st.rerun()
+                                else:
+                                    if st.button("☆ 저장하기", key=f"save_t_{idx}", use_container_width=True):
+                                        supabase.table("saved_topics").insert({"user_id": st.session_state.user.id, "topic_content": full_topic_text}).execute()
+                                        st.rerun()
+
+        # 📚 [좌측 영역] 논문 검색 결과 리스트
+        with res_col:
+            saved_urls = []
+            if st.session_state.get('user'):
+                try: saved_urls = [item['url'] for item in supabase.table("saved_papers").select("url").eq("user_id", st.session_state.user.id).execute().data]
+                except: pass
+
+            for paper in st.session_state.paper_results:
+                with st.container(border=True): 
+                    badge_class = "badge-arxiv" if paper['source'] == "ArXiv" else "badge-crossref"
+                    st.markdown(f"""
+                        <div class="paper-source-badge {badge_class}">{paper['source']} • {paper['year']}</div>
+                        <div class="paper-title">{paper['title']}</div>
+                        <div class="paper-authors">👨‍🔬 저자: {paper['authors']}</div>
+                        <div class="paper-abstract">{paper['summary']}</div>
+                    """, unsafe_allow_html=True)
+                    
+                    c1, c2, c3 = st.columns([3, 3, 4])
+                    with c1: 
+                        st.link_button("📄 원문 보기", paper['url'], use_container_width=True)
+                    with c2:
+                        if not st.session_state.user: 
+                            st.button("☆ 로그인 후 저장", key=f"dis_{paper['url']}", disabled=True, use_container_width=True)
+                        else:
+                            if paper['url'] in saved_urls:
+                                if st.button("★ 저장됨", key=f"del_{paper['url']}", use_container_width=True):
+                                    supabase.table("saved_papers").delete().eq("user_id", st.session_state.user.id).eq("url", paper['url']).execute()
+                                    st.rerun()
+                            else:
+                                if st.button("☆ 저장하기", key=f"add_{paper['url']}", use_container_width=True):
+                                    supabase.table("saved_papers").insert({"user_id": st.session_state.user.id, "title": paper['title'], "authors": paper['authors'], "year": str(paper['year']), "summary": paper['summary'], "url": paper['url'], "source": paper['source']}).execute()
+                                    st.rerun()
+            
+            st.divider()
+            if st.button(f"🔄 다음 논문 더 불러오기", use_container_width=True):
+                perform_search(st.session_state.current_sort, True)
+                st.rerun()
 
 # ==========================================
-# 🧪 B루트: 대화형 실험 설계 매뉴얼 생성
+# 🧪 3. 실험 설계 (B루트) - 완벽한 UI 고도화!
 # ==========================================
-elif menu == "🧪 실험 설계 (B루트)":
-    st.title("🧪 대화형 실험 설계 매뉴얼")
-    
-    idea = st.text_area("실험 아이디어 (예: 콜라와 멘토스 반응, 비커에 소금 섞기 등)")
-    
-    # ✨ 아이디어가 바뀌면 매뉴얼 기억을 초기화
-    if st.session_state.current_idea != idea:
-        st.session_state.current_idea = idea
-        st.session_state.generated_manual = None
-        st.session_state.past_manuals = []
+elif menu == "실험 설계":
+    with st.container():
+        # ✨ 여기에 CSS 마커를 삽입하여 다크 배경을 통일시킵니다!
+        st.markdown('<span class="experiment-marker"></span>', unsafe_allow_html=True)
+        st.markdown("<h2 style='text-align: center; color: white; margin-bottom: 1.5rem;'>🧪 대화형 실험 설계 매뉴얼</h2>", unsafe_allow_html=True)
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown("<span class='label-essential'>🎯 탐구 주제 (필수)</span>", unsafe_allow_html=True)
+            topic = st.text_input("topic", placeholder="비타민 C 항산화 반응 속도 측정 등", label_visibility="collapsed")
+            
+            st.markdown("<span class='label-optional'>➡️ 독립 변인 (선택)</span>", unsafe_allow_html=True)
+            ind_var = st.text_input("ind", placeholder="비타민 C 수용액의 농도 등", label_visibility="collapsed")
+            
+        with col2:
+            st.markdown("<span class='label-optional'>📈 종속 변인 (선택)</span>", unsafe_allow_html=True)
+            dep_var = st.text_input("dep", placeholder="아이오딘 용액의 탈색 시간 등", label_visibility="collapsed")
+            
+            st.markdown("<span class='label-optional'>🧫 준비물 (선택)</span>", unsafe_allow_html=True)
+            materials = st.text_input("mat", placeholder="아이오딘 용액, 전분, 비커 등", label_visibility="collapsed")
+            
+        st.markdown("<span class='label-optional'>💡 상세 아이디어 및 요청 사항 (선택)</span>", unsafe_allow_html=True)
+        idea_details = st.text_area("details", placeholder="실험 과정에서 특히 신경 쓰고 싶은 부분을 자유롭게 적어주세요.", label_visibility="collapsed")
+        
+        combined_idea = f"주제: {topic}\n독립변인: {ind_var}\n종속변인: {dep_var}\n준비물: {materials}\n상세내용: {idea_details}"
+        
+        if st.session_state.current_idea != combined_idea:
+            st.session_state.current_idea = combined_idea
+            st.session_state.generated_manual = None
+            
+        btn_text = "✨ 실험 매뉴얼 생성하기" if not st.session_state.generated_manual else "🔄 조건 수정해서 다시 짜기"
+        
+        st.write("")
+        submit_clicked = st.button(btn_text, use_container_width=True, type="primary")
 
-    btn_text = "실험 매뉴얼 생성하기" if not st.session_state.generated_manual else "🔄 기구/방법을 바꿔서 새로운 버전으로 다시 짜기"
-    
-    if st.button(btn_text):
-        if not api_key or model is None:
-            st.error("앗! 왼쪽 사이드바에 API Key를 정확히 입력해 주세요.")
-        elif idea:
-            with st.spinner('이전 제안과 겹치지 않게 안전 가이드라인을 적용하여 고민 중입니다...'):
-                prompt = f"""너는 학생들의 과학과제연구(R&E)를 돕는 똑똑하고 친절한 AI 과학 조교야.
-                학생이 다음 실험 아이디어를 냈어: [{idea}]
-                이 아이디어를 바탕으로 구체적인 수치와 기구가 포함된 실험 매뉴얼을 작성해줘.
-                단, 아래 3가지 규칙을 무조건 지켜야 해:
-                1. 절대 임의의 화학 반응식을 만들지 말 것.
-                2. 폭발/유독성 위험이 있는 조합이면 거부하고 경고문을 띄울 것.
-                3. 답변 마지막에 "⚠️ 반드시 교사의 임장 지도하에 실험하시기 바랍니다." 고정."""
+    if submit_clicked:
+        if not topic:
+            st.error("❗ 탐구 주제는 필수 입력 사항입니다.")
+        elif not api_key or model is None:
+            st.error("❗ 왼쪽 사이드바에서 API Key를 먼저 입력해 주세요.")
+        else:
+            with st.spinner("AI가 안전 수칙을 검토하며 체계적인 매뉴얼을 작성 중입니다..."):
+                prompt = f"""
+                학생의 실험 아이디어를 바탕으로 고등학생 수준에 맞는 안전하고 구체적인 실험 매뉴얼을 작성해줘.
                 
-                # 이전 매뉴얼이 있으면 프롬프트에 추가해서 다르게 써달라고 요청!
-                if st.session_state.past_manuals:
-                    prompt += f"\n\n[매우 중요] 이전에 네가 작성했던 매뉴얼 내용이야. 이번에는 다른 측정 도구, 다른 재료 배합, 혹은 다른 변인을 통제하는 완전히 새로운 버전의 매뉴얼을 제안해:\n" + "\n".join(st.session_state.past_manuals)
+                [학생 아이디어]
+                {combined_idea}
                 
+                [출력 형식 (반드시 아래 마크다운 헤더 형식을 지켜서 예쁘게 작성해줘)]
+                ### ⚠️ 안전 수칙 및 주의사항
+                (여기에 실험 시 주의할 점, 폐기물 처리 방법 등을 상세히 작성)
+                
+                ### 🧫 필요 기구 및 시약
+                (여기에 규격과 수량이 포함된 준비물 목록을 불릿 포인트로 작성)
+                
+                ### 👣 단계별 실험 과정
+                1. (스텝 1 상세 설명)
+                2. (스텝 2 상세 설명)
+                ...
+                
+                [제약조건]
+                - 수치와 기구의 규격을 구체적으로 포함할 것.
+                - 절대 임의의 위험한 화학식이나 폭발/유독성 실험은 거부하고 안전한 대안을 제시할 것.
+                - 마지막 줄에 '> ⚠️ **교사 임장 지도 필수**' 라는 문구를 인용구 형태로 꼭 넣을 것.
+                """
+                if st.session_state.past_manuals: 
+                    prompt += f"\n[중요] 이전 매뉴얼 내용과 다른 방식이나 조건을 추가해서 제안해줘:\n" + "\n".join(st.session_state.past_manuals)
+                    
                 try:
                     response = model.generate_content(prompt).text
                     st.session_state.generated_manual = response
-                    st.session_state.past_manuals.append(response) # 방금 만든 것도 과거 기억에 추가!
-                except Exception as e:
-                    st.error(f"AI와 연결 문제 발생: {e}")
-        else:
-            st.warning("실험 아이디어를 입력해 주세요.")
+                    st.session_state.past_manuals.append(response) 
+                except Exception as e: 
+                    st.error(f"연결 에러가 발생했습니다: {e}")
 
     if st.session_state.generated_manual:
-        st.subheader("📋 구체화된 실험 매뉴얼")
-        st.write(st.session_state.generated_manual)
-        
-        if st.session_state.get('user'):
-            if st.button("💾 이 매뉴얼을 내 연구 노트에 저장"):
-                try:
-                    data = {"user_id": st.session_state.user.id, "idea": st.session_state.current_idea, "manual_content": st.session_state.generated_manual}
-                    supabase.table("saved_manuals").insert(data).execute()
-                    st.toast("✅ 매뉴얼이 연구 노트에 저장되었습니다!")
-                except Exception as e:
-                    st.error(f"저장 실패: {e}")
-        else:
-            st.warning("로그인하시면 이 매뉴얼을 저장할 수 있습니다.")
+        st.write("")
+        st.markdown("### 📋 AI 맞춤형 실험 매뉴얼")
+        with st.container(border=True):
+            st.markdown(st.session_state.generated_manual)
+            st.divider()
+            if st.session_state.user:
+                col1, col2, col3 = st.columns([1, 2, 1])
+                with col2:
+                    if st.button("💾 이 실험 매뉴얼 저장하기", use_container_width=True):
+                        try:
+                            supabase.table("saved_manuals").insert({
+                                "user_id": st.session_state.user.id, 
+                                "idea": topic, 
+                                "manual_content": st.session_state.generated_manual
+                            }).execute()
+                            st.toast("✅ 내 연구 노트에 저장되었습니다!")
+                        except: 
+                            st.error("저장 실패")
 
 # ==========================================
-# 🗄️ 내 연구 노트 (마이페이지)
+# 🗄️ 4. 내 연구 노트
 # ==========================================
-elif menu == "🗄️ 내 연구 노트":
-    st.title("🗄️ 내 연구 노트 (마이페이지)")
-    
-    if 'role' not in st.session_state: st.session_state.role = None
-    if 'school' not in st.session_state: st.session_state.school = None
-
-    if not st.session_state.user:
-        st.write("서비스를 이용하려면 먼저 로그인이나 회원가입을 해주세요.")
-        tab_login, tab_signup = st.tabs(["🔑 로그인", "📝 회원가입"])
-        
-        with tab_login:
-            login_email = st.text_input("이메일", key="login_email")
-            login_pw = st.text_input("비밀번호", type="password", key="login_pw")
-            if st.button("로그인하기"):
-                try:
-                    response = supabase.auth.sign_in_with_password({"email": login_email, "password": login_pw})
-                    st.session_state.user = response.user
-                    st.success("로그인 성공!")
-                    st.rerun() 
-                except Exception as e: st.error(f"로그인 실패: {e}")
-        
-        with tab_signup:
-            st.info("비밀번호는 최소 6자리 이상이어야 합니다.")
-            signup_email = st.text_input("새 이메일", key="signup_email")
-            signup_pw = st.text_input("새 비밀번호", type="password", key="signup_pw")
-            if st.button("회원가입하기"):
-                try:
-                    response = supabase.auth.sign_up({"email": signup_email, "password": signup_pw})
-                    st.success("🎉 회원가입 완료! 왼쪽 탭에서 로그인해 주세요.")
-                except Exception as e: st.error(f"회원가입 오류: {e}")
-
+elif menu == "내 연구 노트":
+    st.title("🗄️ 내 연구 포트폴리오")
+    if not st.session_state.user: st.warning("왼쪽 사이드바에서 로그인 해주세요.")
     else:
         if not st.session_state.school:
-            try:
-                res = supabase.table("user_profiles").select("*").eq("id", st.session_state.user.id).execute()
-                if res.data:
-                    st.session_state.role = res.data[0]['role']
-                    st.session_state.school = {"name": res.data[0]['school_name'], "code": res.data[0]['school_code']}
-                    st.rerun()
-            except: pass
-
-        st.success(f"환영합니다! {st.session_state.user.email} 님")
-        if st.button("로그아웃"):
-            supabase.auth.sign_out()
-            st.session_state.user, st.session_state.role, st.session_state.school = None, None, None
-            st.rerun()
-            
-        st.divider()
-
-        if not st.session_state.school:
             st.subheader("👋 프로필을 설정해 주세요.")
-            role = st.radio("역할이 무엇인가요?", ["👨‍🎓 학생", "👨‍🏫 교사"])
+            role = st.radio("역할", ["👨‍🎓 학생", "👨‍🏫 교사"])
             keyword = st.text_input("학교 이름 검색")
-            if st.button("학교 검색") and keyword:
-                with st.spinner("검색 중..."):
-                    try:
-                        res = requests.get("https://open.neis.go.kr/hub/schoolInfo", params={"Type": "json", "pIndex": 1, "pSize": 5, "SCHUL_NM": keyword}).json()
-                        st.session_state.search_results = res.get("schoolInfo", [{}, {"row": []}])[1].get("row", [])
-                    except: st.error("네트워크 오류")
+            if st.button("검색") and keyword:
+                try:
+                    res = requests.get("https://open.neis.go.kr/hub/schoolInfo", params={"Type": "json", "pIndex": 1, "pSize": 5, "SCHUL_NM": keyword}).json()
+                    st.session_state.search_results = res.get("schoolInfo", [{}, {"row": []}])[1].get("row", [])
+                except: st.error("네트워크 오류")
             
             if st.session_state.get('search_results'):
                 for school in st.session_state.search_results:
@@ -325,21 +464,16 @@ elif menu == "🗄️ 내 연구 노트":
                     col1, col2 = st.columns([3, 1])
                     with col1: st.write(f"**{s_name}** ({s_addr})")
                     with col2:
-                        if st.button("선택하기", key=s_code):
+                        if st.button("선택", key=s_code):
                             try:
                                 supabase.table("user_profiles").upsert({"id": st.session_state.user.id, "role": role, "school_code": s_code, "school_name": s_name}).execute()
                                 st.session_state.role, st.session_state.school = role, {"name": s_name, "code": s_code}
                                 st.session_state.search_results = None
                                 st.rerun()
-                            except Exception as e: st.error(f"저장 실패: {e}")
-
+                            except: st.error("저장 실패")
         else:
-            st.info(f"**소속:** {st.session_state.school['name']} ({st.session_state.role})")
-            
             if "학생" in st.session_state.role:
-                st.subheader("📚 나의 탐구 기록 포트폴리오")
                 tab_p, tab_t, tab_m = st.tabs(["📚 저장된 논문", "💡 추천 실험 주제", "📋 실험 매뉴얼"])
-                
                 with tab_p:
                     try:
                         saved_list = supabase.table("saved_papers").select("*").eq("user_id", st.session_state.user.id).order("created_at", desc=True).execute().data
@@ -352,19 +486,17 @@ elif menu == "🗄️ 내 연구 노트":
                                     supabase.table("saved_papers").delete().eq("id", paper['id']).execute()
                                     st.rerun()
                     except: pass
-                
                 with tab_t:
                     try:
                         topic_list = supabase.table("saved_topics").select("*").eq("user_id", st.session_state.user.id).order("created_at", desc=True).execute().data
                         if not topic_list: st.write("저장된 주제가 없습니다.")
                         for topic in topic_list:
-                            with st.expander(f"💡 저장된 주제 (날짜: {topic['created_at'][:10]})"):
+                            with st.expander(f"💡 주제 ({topic['created_at'][:10]})"):
                                 st.write(topic['topic_content'])
                                 if st.button("🗑️ 삭제", key=f"del_t_{topic['id']}"):
                                     supabase.table("saved_topics").delete().eq("id", topic['id']).execute()
                                     st.rerun()
                     except: pass
-                
                 with tab_m:
                     try:
                         manual_list = supabase.table("saved_manuals").select("*").eq("user_id", st.session_state.user.id).order("created_at", desc=True).execute().data
@@ -376,12 +508,5 @@ elif menu == "🗄️ 내 연구 노트":
                                     supabase.table("saved_manuals").delete().eq("id", manual['id']).execute()
                                     st.rerun()
                     except: pass
-
             else:
-                st.subheader("👨‍🏫 우리 학교 학생 지도 (교사 전용)")
-                st.write(f"**{st.session_state.school['name']}** 학생들의 포트폴리오 열람 기능이 곧 추가됩니다!")
-
-else:
-    st.title("24시간 맞춤형 AI 과학 조교 🤖")
-    st.write("막막한 과학 탐구 시작부터 구체적이고 안전한 실험 설계까지 도와드립니다!")
-    st.info("왼쪽 사이드바에 API Key를 먼저 입력한 후 메뉴를 이용해 주세요.")
+                st.write(f"**{st.session_state.school['name']}** 학생 포트폴리오 열람 기능 준비 중입니다.")
