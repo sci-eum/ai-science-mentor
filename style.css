@@ -1,0 +1,333 @@
+/* style.css */
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+
+/* 폰트 및 기본 배경 */
+html, body, [class*="css"], .stApp {
+    font-family: 'Pretendard', sans-serif !important;
+    background-color: #F8FAFC;
+}
+
+/* 아이콘 복구 */
+[data-testid="stIconMaterial"] {
+    font-family: 'Material Symbols Rounded' !important;
+}
+
+/* 사이드바 배경 */
+[data-testid="stSidebar"] {
+    background-color: #1C244B !important;
+    border-right: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* 사이드바 글씨 흰색 고정 */
+[data-testid="stSidebar"] * {
+    color: white !important;
+}
+[data-testid="stSidebar"] input {
+    color: black !important;
+}
+
+/* ✨ 사이드바 전용 버튼(로그인, 로그아웃) 눈에 띄게 디자인! */
+[data-testid="stSidebar"] div.stButton button,
+[data-testid="stSidebar"] div.stFormSubmitButton button {
+    background-color: #5A8CFF !important; /* 예쁜 포인트 블루 */
+    color: white !important;
+    border: none !important;
+    border-radius: 12px !important;
+    font-weight: 800 !important;
+    height: 45px !important;
+    transition: all 0.2s ease !important;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2) !important;
+}
+[data-testid="stSidebar"] div.stButton button:hover,
+[data-testid="stSidebar"] div.stFormSubmitButton button:hover {
+    background-color: #4376E8 !important; /* 마우스 올리면 살짝 짙어짐 */
+    transform: translateY(-2px) !important;
+    box-shadow: 0 6px 15px rgba(90, 140, 255, 0.4) !important;
+}
+
+/* 폼(st.form) 테두리 제거 */
+[data-testid="stSidebar"] [data-testid="stForm"] {
+    border: none !important;
+    padding: 0 !important;
+    background-color: transparent !important;
+}
+
+/* ==========================================
+   👤 고급 프로필 카드 (Glassmorphism)
+   ========================================== */
+.profile-container {
+    background: rgba(255, 255, 255, 0.07);
+    backdrop-filter: blur(15px);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 24px;
+    padding: 24px;
+    margin-bottom: 20px;
+    text-align: center;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+}
+
+.avatar-circle {
+    width: 70px;
+    height: 70px;
+    background: linear-gradient(135deg, #5A8CFF, #4376E8);
+    border-radius: 50%;
+    margin: 0 auto 15px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 30px;
+    box-shadow: 0 5px 15px rgba(90, 140, 255, 0.4);
+}
+
+.role-badge {
+    display: inline-block;
+    background-color: #5A8CFF;
+    color: white;
+    padding: 4px 12px;
+    border-radius: 50px;
+    font-size: 0.75rem;
+    font-weight: 800;
+    margin-bottom: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.profile-name {
+    color: white;
+    font-size: 1.25rem;
+    font-weight: 800;
+    margin-bottom: 4px;
+}
+
+.profile-school {
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 0.85rem;
+    margin-bottom: 15px;
+}
+
+/* ==========================================
+   🌈 애니메이션 (오로라)
+   ========================================== */
+@keyframes aurora {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+}
+
+.hero-container {
+    background: linear-gradient(-45deg, #0B0F19, #1C244B, #3B4B95, #1E1B4B);
+    background-size: 400% 400%;
+    animation: aurora 15s ease infinite;
+    padding: 4rem 2rem;
+    border-radius: 30px;
+    text-align: center;
+    margin-bottom: 2rem;
+    box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+}
+
+/* ==========================================
+   2. 상단 네비게이션 (top-menu-marker로 보호!)
+   ========================================== */
+div[data-testid="stVerticalBlock"]:has(> div.element-container .top-menu-marker) div[role="radiogroup"] {
+    display: flex;
+    flex-direction: row !important;
+    justify-content: flex-end !important;
+    align-items: center;
+    gap: 0px !important;
+    margin-bottom: 0px !important; 
+    padding-right: 10px;
+}
+
+hr {
+    margin-top: 1.5rem !important;
+    margin-bottom: 1.5rem !important;
+    border-color: #E2E8F0 !important; 
+}
+
+div[data-testid="stVerticalBlock"]:has(> div.element-container .top-menu-marker) div[role="radiogroup"] label > div:first-child { display: none !important; }
+div[data-testid="stVerticalBlock"]:has(> div.element-container .top-menu-marker) div[role="radiogroup"] label > div:last-child { margin-left: 0 !important; padding: 0 !important; }
+
+div[data-testid="stVerticalBlock"]:has(> div.element-container .top-menu-marker) div[role="radiogroup"] label {
+    display: flex !important;
+    justify-content: center !important;
+    align-items: center !important;
+    background-color: transparent !important;
+    border: none !important;
+    border-right: 1px solid #CBD5E1 !important; 
+    border-radius: 0 !important; 
+    box-shadow: none !important;
+    padding: 5px 24px !important; 
+    margin: 0 !important;
+    cursor: pointer !important;
+    transition: transform 0.2s ease !important;
+}
+
+div[data-testid="stVerticalBlock"]:has(> div.element-container .top-menu-marker) div[role="radiogroup"] label:last-child { border-right: none !important; }
+div[data-testid="stVerticalBlock"]:has(> div.element-container .top-menu-marker) div[role="radiogroup"] label:hover { transform: translateY(-2px); }
+
+div[data-testid="stVerticalBlock"]:has(> div.element-container .top-menu-marker) div[role="radiogroup"] label p {
+    color: #1C244B !important; 
+    font-size: 1.05rem !important;
+    font-weight: 600 !important;
+    margin: 0 !important;
+    transition: color 0.3s ease !important;
+}
+div[data-testid="stVerticalBlock"]:has(> div.element-container .top-menu-marker) div[role="radiogroup"] label:has(input:checked) p {
+    color: #5A8CFF !important; 
+    font-weight: 900 !important;
+}
+
+/* ==========================================
+   4. 논문 검색 & 실험 설계 다크 박스
+   ========================================== */
+
+/* 검색창과 실험 설계창 모두에 오로라 배경 적용 */
+div[data-testid="stVerticalBlock"]:has(> div.element-container .search-marker),
+div[data-testid="stVerticalBlock"]:has(> div.element-container .experiment-marker) {
+    background: linear-gradient(-45deg, #0B0F19, #1C244B, #3B4B95, #1E1B4B) !important;
+    background-size: 400% 400% !important;
+    animation: aurora 15s ease infinite !important;
+    padding: 3rem 2rem 2.5rem 2rem !important;
+    border-radius: 24px !important;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15) !important;
+    margin-bottom: 2rem !important;
+}
+
+/* 논문 검색창 정렬 라디오 버튼 커스텀 */
+div[data-testid="stVerticalBlock"]:has(> div.element-container .search-marker) div[role="radiogroup"] {
+    display: flex;
+    flex-direction: row !important;
+    justify-content: center !important;
+    gap: 20px !important;
+    margin-bottom: 1.5rem !important;
+}
+div[data-testid="stVerticalBlock"]:has(> div.element-container .search-marker) div[role="radiogroup"] label > div:first-child { display: none !important; }
+div[data-testid="stVerticalBlock"]:has(> div.element-container .search-marker) div[role="radiogroup"] label > div:last-child { margin-left: 0 !important; padding: 0 !important; }
+div[data-testid="stVerticalBlock"]:has(> div.element-container .search-marker) div[role="radiogroup"] label {
+    background-color: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 5px 15px !important;
+    margin: 0 !important;
+}
+div[data-testid="stVerticalBlock"]:has(> div.element-container .search-marker) div[role="radiogroup"] label p {
+    color: rgba(255, 255, 255, 0.5) !important;
+    font-size: 1.05rem !important;
+    font-weight: 500 !important;
+}
+div[data-testid="stVerticalBlock"]:has(> div.element-container .search-marker) div[role="radiogroup"] label:has(input:checked) p {
+    color: #FFFFFF !important;
+    font-weight: 800 !important;
+}
+
+/* 검색창 전용 입력 필드 (돋보기 포함) */
+div[data-testid="stVerticalBlock"]:has(> div.element-container .search-marker) div.stTextInput input {
+    background-color: white !important;
+    color: #1C244B !important;
+    border-radius: 12px !important;
+    border: none !important;
+    height: 48px !important;
+    line-height: 48px !important; 
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+    padding-left: 48px !important; 
+    box-shadow: 0 4px 10px rgba(0,0,0,0.1) !important;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%2364748B' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='8'%3E%3C/circle%3E%3Cline x1='21' y1='21' x2='16.65' y2='16.65'%3E%3C/line%3E%3C/svg%3E") !important;
+    background-repeat: no-repeat !important;
+    background-position: 16px center !important; 
+}
+
+/* 실험 설계 전용 입력 필드 (하얀 배경) */
+div[data-testid="stVerticalBlock"]:has(> div.element-container .experiment-marker) div.stTextInput input,
+div[data-testid="stVerticalBlock"]:has(> div.element-container .experiment-marker) div.stTextArea textarea {
+    background-color: white !important;
+    color: #1C244B !important;
+    border-radius: 12px !important;
+    border: none !important;
+    padding: 12px 16px !important;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.1) !important;
+}
+
+/* 필수/선택 라벨 디자인 */
+.label-essential { 
+    color: #FF6B6B !important; 
+    font-weight: 800; 
+    font-size: 0.95rem; 
+    display: block; 
+    margin-bottom: 8px; 
+}
+.label-optional { 
+    color: rgba(255, 255, 255, 0.7) !important; 
+    font-weight: 500; 
+    font-size: 0.95rem; 
+    display: block; 
+    margin-bottom: 8px; 
+}
+
+/* 검색 및 실험 설계 버튼 통일 */
+div[data-testid="stVerticalBlock"]:has(> div.element-container .search-marker) div.stButton button[kind="primary"],
+div[data-testid="stVerticalBlock"]:has(> div.element-container .experiment-marker) div.stButton button[kind="primary"] {
+    height: 48px !important;
+    background-color: #5A8CFF !important;
+    border: none !important;
+    border-radius: 12px !important;
+    font-weight: 800 !important;
+    font-size: 1.1rem !important;
+    color: white !important;
+}
+
+/* ==========================================
+   5. 논문 결과 카드
+   ========================================== */
+[data-testid="stVerticalBlockBorderWrapper"] {
+    border-radius: 16px !important;
+    border: 1px solid #E2E8F0 !important;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.02) !important;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease !important;
+    background-color: #FFFFFF !important;
+    padding: 0.5rem 1rem !important;
+    margin-bottom: 1rem !important;
+}
+[data-testid="stVerticalBlockBorderWrapper"]:hover {
+    transform: translateY(-4px) !important;
+    box-shadow: 0 12px 25px rgba(90, 140, 255, 0.1) !important;
+    border-color: #5A8CFF !important;
+}
+
+.paper-source-badge {
+    display: inline-block;
+    padding: 5px 12px;
+    border-radius: 8px;
+    font-size: 0.75rem;
+    font-weight: 800;
+    margin-bottom: 10px;
+    color: white;
+    letter-spacing: 0.5px;
+}
+.badge-arxiv { background-color: #4F46E5; }   
+.badge-crossref { background-color: #F59E0B; } 
+
+.paper-title {
+    font-size: 1.3rem;
+    font-weight: 800;
+    color: #1E293B;
+    line-height: 1.4;
+    margin-bottom: 8px;
+    word-break: keep-all;
+}
+.paper-authors {
+    color: #475569;
+    font-size: 0.9rem;
+    margin-bottom: 12px;
+    font-weight: 500;
+}
+.paper-abstract {
+    color: #64748B;
+    font-size: 0.95rem;
+    line-height: 1.6;
+    margin-bottom: 15px;
+    display: -webkit-box;
+    -webkit-line-clamp: 3; 
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
