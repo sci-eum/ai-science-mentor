@@ -116,14 +116,17 @@ st.sidebar.markdown("---")
 api_key = st.sidebar.text_input("Gemini API Key:", type="password")
 model = None
 
-# ✨ AI 모델 자동 탐색
+# ✨ AI 모델 자동 탐색 (gemini-1.5-flash 최우선 적용)
 if api_key:
     try:
         genai.configure(api_key=api_key)
-        for m in genai.list_models():
-            if 'generateContent' in m.supported_generation_methods:
-                model = genai.GenerativeModel(m.name)
-                break
+        available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        
+        # 1.5-flash 모델이 있다면 가장 먼저 선택 (무료 한도가 넉넉함)
+        if 'models/gemini-1.5-flash' in available_models:
+            model = genai.GenerativeModel('models/gemini-1.5-flash')
+        elif available_models:
+            model = genai.GenerativeModel(available_models[0])
     except Exception as e: 
         st.sidebar.error(f"API 설정 오류: {e}")
 
@@ -275,8 +278,12 @@ elif menu == "논문 찾기":
                                     t_title = lines[0].replace("제목:", "").strip()
                                     t_content = clean_t.replace(lines[0], "").replace("내용:", "").strip()
                                     st.session_state.ai_topics_list.append({"title": t_title, "content": t_content})
-                        except Exception as e: 
-                            st.error(f"오류가 발생했습니다: {e}")
+                        except Exception as e:
+                            error_msg = str(e)
+                            if "429" in error_msg or "Quota" in error_msg:
+                                st.warning("⏳ 구글 API 무료 호출 횟수(1분당 15회)를 초과했습니다. 약 1분만 기다렸다가 다시 눌러주세요!")
+                            else:
+                                st.error("AI 호출에 실패했습니다. API 키를 확인해 주세요.")
 
             if st.session_state.ai_topics_list:
                 saved_topic_contents = []
