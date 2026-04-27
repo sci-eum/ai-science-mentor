@@ -2,6 +2,8 @@ import streamlit as st
 import google.generativeai as genai
 import arxiv
 import requests
+from html import escape
+from math import atan2, cos, radians, sin, sqrt
 from supabase import create_client, Client
 
 # ==========================================
@@ -27,12 +29,133 @@ def init_connection():
 
 supabase: Client = init_connection()
 
+def extract_region(address):
+    if not address:
+        return None
+    return address.split()[0]
+
+def haversine_km(lat1, lng1, lat2, lng2):
+    radius = 6371
+    dlat = radians(float(lat2) - float(lat1))
+    dlng = radians(float(lng2) - float(lng1))
+    a = sin(dlat / 2) ** 2 + cos(radians(float(lat1))) * cos(radians(float(lat2))) * sin(dlng / 2) ** 2
+    return radius * 2 * atan2(sqrt(a), sqrt(1 - a))
+
+def geocode_address(address):
+    """VWorld 주소 좌표 변환. 키가 없거나 실패하면 None을 반환해 지역 기반 추천으로 대체한다."""
+    if not address:
+        return None, None
+    try:
+        api_key = st.secrets.get("GEOCODING_API_KEY")
+    except Exception:
+        api_key = None
+    if not api_key:
+        return None, None
+
+    try:
+        response = requests.get(
+            "https://api.vworld.kr/req/address",
+            params={
+                "service": "address",
+                "request": "getcoord",
+                "version": "2.0",
+                "crs": "epsg:4326",
+                "type": "ROAD",
+                "address": address,
+                "format": "json",
+                "key": api_key,
+            },
+            timeout=5,
+        )
+        data = response.json()
+        point = data.get("response", {}).get("result", {}).get("point")
+        if point:
+            return float(point["y"]), float(point["x"])
+    except Exception:
+        pass
+    return None, None
+
+def build_school_profile(profile):
+    school_address = profile.get("school_address")
+    return {
+        "name": profile.get("school_name"),
+        "code": profile.get("school_code"),
+        "address": school_address,
+        "region": profile.get("school_region") or extract_region(school_address),
+        "lat": profile.get("school_lat"),
+        "lng": profile.get("school_lng"),
+    }
+
+def fetch_nearby_open_labs(school, radius_km):
+    if not supabase:
+        return [], "Supabase 연결을 확인해 주세요."
+
+    try:
+        query = supabase.table("open_labs").select("*").eq("is_active", True)
+        if radius_km == "전체 시도" and school.get("region"):
+            query = query.eq("region", school["region"])
+        rows = query.execute().data or []
+    except Exception as e:
+        return [], f"open_labs 테이블 조회 실패: {e}"
+
+    labs = []
+    school_lat, school_lng = school.get("lat"), school.get("lng")
+    for lab in rows:
+        distance = None
+        if school_lat and school_lng and lab.get("lat") and lab.get("lng"):
+            try:
+                distance = haversine_km(school_lat, school_lng, lab["lat"], lab["lng"])
+            except Exception:
+                distance = None
+
+        if radius_km != "전체 시도" and distance is not None and distance > radius_km:
+            continue
+        if radius_km != "전체 시도" and distance is None and school.get("region") and lab.get("region") != school.get("region"):
+            continue
+
+        lab["distance_km"] = distance
+        labs.append(lab)
+
+    return sorted(labs, key=lambda x: x["distance_km"] if x["distance_km"] is not None else 9999), None
+
+def render_open_lab_card(lab):
+    with st.container(border=True):
+        distance = lab.get("distance_km")
+        distance_text = f"{distance:.1f}km" if distance is not None else "거리 계산 전"
+        category = escape(str(lab.get("category") or "오픈랩"))
+        title = escape(str(lab.get("name") or "이름 미상"))
+        host = escape(str(lab.get("host_org") or "운영기관 정보 없음"))
+        address = escape(str(lab.get("address") or "주소 정보 없음"))
+        target = escape(str(lab.get("target") or "대상 정보 없음"))
+        description = escape(str(lab.get("description") or "공개된 프로그램 정보를 확인해 보세요."))
+
+        st.markdown(f"""
+            <div class="paper-source-badge badge-arxiv">{category}</div>
+            <div class="paper-title">{title}</div>
+            <div class="paper-authors">🏛️ {host} | 📍 {address} | 학교 기준 {distance_text}</div>
+            <div class="paper-abstract"><strong>대상:</strong> {target}<br>{description}</div>
+        """, unsafe_allow_html=True)
+
+        homepage_url = lab.get("homepage_url")
+        program_url = lab.get("program_url")
+        c1, c2, c3 = st.columns([2, 2, 4])
+        with c1:
+            if homepage_url:
+                st.link_button("홈페이지 보기", homepage_url, use_container_width=True)
+            else:
+                st.button("홈페이지 없음", disabled=True, use_container_width=True)
+        with c2:
+            if program_url:
+                st.link_button("프로그램 안내", program_url, use_container_width=True)
+            else:
+                st.button("프로그램 링크 없음", disabled=True, use_container_width=True)
+
 # ==========================================
 # 2. 전역 상태(Session State) 초기화
 # ==========================================
 states = [
     'user', 'role', 'school', 'paper_results', 'seen_titles', 'search_page', 
-    'ai_topics_list', 'past_topics', 'generated_manual', 'past_manuals', 'current_idea', 'current_sort'
+    'ai_topics_list', 'past_topics', 'generated_manual', 'past_manuals', 'current_idea', 'current_sort', 'profile_edit'
 ]
 for s in states:
     if s not in st.session_state: 
@@ -91,7 +214,7 @@ else:
             res = supabase.table("user_profiles").select("*").eq("id", st.session_state.user.id).execute()
             if res.data:
                 st.session_state.role = res.data[0]['role']
-                st.session_state.school = {"name": res.data[0]['school_name'], "code": res.data[0]['school_code']}
+                st.session_state.school = build_school_profile(res.data[0])
         except: pass
 
     role_label = st.session_state.role if st.session_state.role else "연구원"
@@ -109,7 +232,7 @@ else:
     
     if st.sidebar.button("로그아웃", use_container_width=True):
         supabase.auth.sign_out()
-        for s in ['user', 'role', 'school']: st.session_state[s] = None
+        for s in ['user', 'role', 'school', 'profile_edit']: st.session_state[s] = None
         st.rerun()
 
 st.sidebar.markdown("---")
@@ -139,7 +262,7 @@ with st.container():
     st.markdown('<span class="top-menu-marker"></span>', unsafe_allow_html=True)
     menu = st.radio(
         "메뉴 선택", 
-        ["메인", "논문 찾기", "실험 설계", "내 연구 노트"],
+        ["메인", "논문 찾기", "실험 설계", "주변 오픈랩", "내 연구 노트"],
         horizontal=True, 
         label_visibility="collapsed" 
     )
@@ -155,13 +278,14 @@ if menu == "메인":
             <p style="color:rgba(255,255,255,0.8); font-size:1.2rem;">세상을 바꾸는 당신의 위대한 탐구, AI가 지도를 그려드립니다.</p>
         </div>
     """, unsafe_allow_html=True)
-    c1, c2, c3 = st.columns(3)
+    c1, c2, c3, c4 = st.columns(4)
     features = [
         ("🔍", "논문 검색", "글로벌 DB 통합 탐색"), 
         ("🧪", "실험 설계", "AI 기반 안전 매뉴얼"), 
+        ("🧭", "주변 오픈랩", "학교 위치 기반 체험 추천"),
         ("🗄️", "연구 노트", "나만의 탐구 포트폴리오")
     ]
-    for col, (i, t, d) in zip([c1, c2, c3], features):
+    for col, (i, t, d) in zip([c1, c2, c3, c4], features):
         col.markdown(f"<div style='background:white; padding:2rem; border-radius:20px; text-align:center; box-shadow:0 10px 20px rgba(0,0,0,0.05);'><h3>{i} {t}</h3><p>{d}</p></div>", unsafe_allow_html=True)
 
 # ==========================================
@@ -449,13 +573,50 @@ elif menu == "실험 설계":
                             st.error("저장 실패")
 
 # ==========================================
-# 🗄️ 4. 내 연구 노트
+# 🧭 4. 주변 오픈랩
+# ==========================================
+elif menu == "주변 오픈랩":
+    st.title("🧭 학교 주변 오픈랩")
+    st.caption("프로필에 저장된 학교 위치를 기준으로 과학교육원, 과학관, 대학교 오픈랩 프로그램을 추천합니다.")
+
+    if not st.session_state.user:
+        st.warning("왼쪽 사이드바에서 로그인하면 학교 위치 기반 추천을 볼 수 있습니다.")
+    elif not st.session_state.school:
+        st.warning("먼저 '내 연구 노트'에서 학교 프로필을 설정해 주세요.")
+    else:
+        school = st.session_state.school
+        st.info(f"기준 학교: {school.get('name')} | {school.get('address') or '주소 정보 없음'}")
+
+        if not school.get("lat") or not school.get("lng"):
+            st.warning("학교 좌표가 아직 저장되지 않았습니다. 좌표가 없으면 같은 시도/지역의 오픈랩을 우선 보여줍니다.")
+
+        radius_label = st.radio(
+            "추천 범위",
+            ["10km", "30km", "50km", "전체 시도"],
+            horizontal=True,
+            label_visibility="collapsed",
+        )
+        radius_map = {"10km": 10, "30km": 30, "50km": 50, "전체 시도": "전체 시도"}
+        labs, error = fetch_nearby_open_labs(school, radius_map[radius_label])
+
+        if error:
+            st.error(error)
+            st.info("Supabase에 open_labs 테이블과 공개 프로그램 데이터가 준비되어 있는지 확인해 주세요.")
+        elif not labs:
+            st.warning("조건에 맞는 오픈랩을 찾지 못했습니다. 반경을 넓히거나 open_labs 데이터를 추가해 주세요.")
+        else:
+            st.success(f"{len(labs)}개의 오픈랩/체험 프로그램을 찾았습니다.")
+            for lab in labs:
+                render_open_lab_card(lab)
+
+# ==========================================
+# 🗄️ 5. 내 연구 노트
 # ==========================================
 elif menu == "내 연구 노트":
     st.title("🗄️ 내 연구 포트폴리오")
     if not st.session_state.user: st.warning("왼쪽 사이드바에서 로그인 해주세요.")
     else:
-        if not st.session_state.school:
+        if not st.session_state.school or st.session_state.profile_edit:
             st.subheader("👋 프로필을 설정해 주세요.")
             role = st.radio("역할", ["👨‍🎓 학생", "👨‍🏫 교사"])
             keyword = st.text_input("학교 이름 검색")
@@ -466,19 +627,56 @@ elif menu == "내 연구 노트":
                 except: st.error("네트워크 오류")
             
             if st.session_state.get('search_results'):
-                for school in st.session_state.search_results:
+                for idx, school in enumerate(st.session_state.search_results):
                     s_name, s_code, s_addr = school.get('SCHUL_NM'), school.get('SD_SCHUL_CODE'), school.get('ORG_RDNMA')
                     col1, col2 = st.columns([3, 1])
                     with col1: st.write(f"**{s_name}** ({s_addr})")
                     with col2:
-                        if st.button("선택", key=s_code):
+                        if st.button("선택", key=f"profile_school_{s_code}_{idx}"):
                             try:
-                                supabase.table("user_profiles").upsert({"id": st.session_state.user.id, "role": role, "school_code": s_code, "school_name": s_name}).execute()
-                                st.session_state.role, st.session_state.school = role, {"name": s_name, "code": s_code}
+                                school_lat, school_lng = geocode_address(s_addr)
+                                profile = {
+                                    "id": st.session_state.user.id,
+                                    "role": role,
+                                    "school_code": s_code,
+                                    "school_name": s_name,
+                                    "school_address": s_addr,
+                                    "school_region": extract_region(s_addr),
+                                    "school_lat": school_lat,
+                                    "school_lng": school_lng,
+                                }
+                                try:
+                                    supabase.table("user_profiles").upsert(profile).execute()
+                                except Exception:
+                                    legacy_profile = {
+                                        "id": st.session_state.user.id,
+                                        "role": role,
+                                        "school_code": s_code,
+                                        "school_name": s_name,
+                                    }
+                                    supabase.table("user_profiles").upsert(legacy_profile).execute()
+                                    st.warning("위치 컬럼이 아직 없어 기본 프로필만 저장했습니다. Supabase 마이그레이션을 적용하면 주변 오픈랩 추천이 활성화됩니다.")
+                                st.session_state.role, st.session_state.school = role, {
+                                    "name": s_name,
+                                    "code": s_code,
+                                    "address": s_addr,
+                                    "region": extract_region(s_addr),
+                                    "lat": school_lat,
+                                    "lng": school_lng,
+                                }
                                 st.session_state.search_results = None
+                                st.session_state.profile_edit = False
                                 st.rerun()
                             except: st.error("저장 실패")
         else:
+            profile_col, action_col = st.columns([4, 1])
+            with profile_col:
+                st.caption(f"현재 프로필: {st.session_state.role} | {st.session_state.school.get('name')}")
+            with action_col:
+                if st.button("프로필 수정", use_container_width=True):
+                    st.session_state.profile_edit = True
+                    st.rerun()
+
             if "학생" in st.session_state.role:
                 tab_p, tab_t, tab_m = st.tabs(["📚 저장된 논문", "💡 추천 실험 주제", "📋 실험 매뉴얼"])
                 with tab_p:
