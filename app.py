@@ -34,6 +34,14 @@ def extract_region(address):
         return None
     return address.split()[0]
 
+def extract_city(address):
+    if not address:
+        return None
+    parts = address.split()
+    if len(parts) < 2:
+        return None
+    return parts[1]
+
 def haversine_km(lat1, lng1, lat2, lng2):
     radius = 6371
     dlat = radians(float(lat2) - float(lat1))
@@ -82,24 +90,25 @@ def build_school_profile(profile):
         "code": profile.get("school_code"),
         "address": school_address,
         "region": profile.get("school_region") or extract_region(school_address),
+        "city": extract_city(school_address),
         "lat": profile.get("school_lat"),
         "lng": profile.get("school_lng"),
     }
 
-def fetch_nearby_open_labs(school, radius_km):
+def fetch_open_labs_by_area(school):
     if not supabase:
         return [], "Supabase 연결을 확인해 주세요."
 
     try:
-        query = supabase.table("open_labs").select("*").eq("is_active", True)
-        if radius_km == "전체 시도" and school.get("region"):
-            query = query.eq("region", school["region"])
-        rows = query.execute().data or []
+        rows = supabase.table("open_labs").select("*").eq("is_active", True).execute().data or []
     except Exception as e:
         return [], f"open_labs 테이블 조회 실패: {e}"
 
     labs = []
     school_lat, school_lng = school.get("lat"), school.get("lng")
+    school_region = school.get("region")
+    school_city = school.get("city") or extract_city(school.get("address"))
+
     for lab in rows:
         distance = None
         if school_lat and school_lng and lab.get("lat") and lab.get("lng"):
@@ -108,15 +117,28 @@ def fetch_nearby_open_labs(school, radius_km):
             except Exception:
                 distance = None
 
-        if radius_km != "전체 시도" and distance is not None and distance > radius_km:
-            continue
-        if radius_km != "전체 시도" and distance is None and school.get("region") and lab.get("region") != school.get("region"):
-            continue
-
+        lab_region = lab.get("region") or extract_region(lab.get("address"))
+        lab_city = extract_city(lab.get("address"))
         lab["distance_km"] = distance
+        if school_city and lab_city == school_city:
+            lab["area_group"] = "해당 시/군/구"
+            lab["area_rank"] = 0
+        elif school_region and lab_region == school_region:
+            lab["area_group"] = "해당 시도"
+            lab["area_rank"] = 1
+        else:
+            lab["area_group"] = "전국"
+            lab["area_rank"] = 2
         labs.append(lab)
 
-    return sorted(labs, key=lambda x: x["distance_km"] if x["distance_km"] is not None else 9999), None
+    return sorted(
+        labs,
+        key=lambda x: (
+            x["area_rank"],
+            x["distance_km"] if x["distance_km"] is not None else 9999,
+            x.get("name") or "",
+        ),
+    ), None
 
 def render_open_lab_card(lab):
     with st.container(border=True):
@@ -588,25 +610,22 @@ elif menu == "주변 오픈랩":
         st.info(f"기준 학교: {school.get('name')} | {school.get('address') or '주소 정보 없음'}")
 
         if not school.get("lat") or not school.get("lng"):
-            st.warning("학교 좌표가 아직 저장되지 않았습니다. 좌표가 없으면 같은 시도/지역의 오픈랩을 우선 보여줍니다.")
+            st.warning("학교 좌표가 아직 저장되지 않았습니다. 그래도 주소를 기준으로 같은 시/군/구, 같은 시도, 전국 순서로 보여줍니다.")
 
-        radius_label = st.radio(
-            "추천 범위",
-            ["10km", "30km", "50km", "전체 시도"],
-            horizontal=True,
-            label_visibility="collapsed",
-        )
-        radius_map = {"10km": 10, "30km": 30, "50km": 50, "전체 시도": "전체 시도"}
-        labs, error = fetch_nearby_open_labs(school, radius_map[radius_label])
+        labs, error = fetch_open_labs_by_area(school)
 
         if error:
             st.error(error)
             st.info("Supabase에 open_labs 테이블과 공개 프로그램 데이터가 준비되어 있는지 확인해 주세요.")
         elif not labs:
-            st.warning("조건에 맞는 오픈랩을 찾지 못했습니다. 반경을 넓히거나 open_labs 데이터를 추가해 주세요.")
+            st.warning("표시할 오픈랩을 찾지 못했습니다. open_labs 데이터를 추가해 주세요.")
         else:
             st.success(f"{len(labs)}개의 오픈랩/체험 프로그램을 찾았습니다.")
+            current_group = None
             for lab in labs:
+                if lab.get("area_group") != current_group:
+                    current_group = lab.get("area_group")
+                    st.markdown(f"### {current_group}")
                 render_open_lab_card(lab)
 
 # ==========================================
@@ -661,6 +680,7 @@ elif menu == "내 연구 노트":
                                     "code": s_code,
                                     "address": s_addr,
                                     "region": extract_region(s_addr),
+                                    "city": extract_city(s_addr),
                                     "lat": school_lat,
                                     "lng": school_lng,
                                 }
