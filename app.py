@@ -50,7 +50,7 @@ def haversine_km(lat1, lng1, lat2, lng2):
     return radius * 2 * atan2(sqrt(a), sqrt(1 - a))
 
 def geocode_address(address, place_name=None):
-    """VWorld 주소 좌표 변환. 키가 없거나 실패하면 None을 반환해 지역 기반 추천으로 대체한다."""
+    """학교명/주소를 좌표로 변환한다. 공개 좌표원을 먼저 쓰고, VWorld는 보조 경로로 사용한다."""
     if not address:
         st.session_state.geocode_debug = "주소가 비어 있습니다."
         return None, None
@@ -58,9 +58,6 @@ def geocode_address(address, place_name=None):
         api_key = st.secrets.get("GEOCODING_API_KEY")
     except Exception:
         api_key = None
-    if not api_key:
-        st.session_state.geocode_debug = "Streamlit Secrets에서 GEOCODING_API_KEY를 찾지 못했습니다."
-        return None, None
 
     try:
         referer = st.secrets.get("VWORLD_REFERER") or st.secrets.get("APP_URL")
@@ -80,6 +77,60 @@ def geocode_address(address, place_name=None):
     ]
     address_candidates = list(dict.fromkeys(address_candidates))
     debug_messages = []
+
+    if place_name:
+        try:
+            wikidata_query = f'''
+            SELECT ?coord WHERE {{
+              ?item rdfs:label "{place_name.replace('"', '')}"@ko;
+                    wdt:P625 ?coord.
+            }}
+            LIMIT 1
+            '''
+            response = requests.get(
+                "https://query.wikidata.org/sparql",
+                params={"query": wikidata_query, "format": "json"},
+                headers={
+                    "Accept": "application/sparql-results+json",
+                    "User-Agent": "ai-science-mentor/1.0",
+                },
+                timeout=8,
+            )
+            bindings = response.json().get("results", {}).get("bindings", [])
+            if bindings:
+                point_text = bindings[0]["coord"]["value"]
+                if point_text.startswith("Point(") and point_text.endswith(")"):
+                    lng, lat = point_text[6:-1].split()
+                    st.session_state.geocode_debug = f"Wikidata 좌표 조회 성공: {place_name}"
+                    return float(lat), float(lng)
+            debug_messages.append(f"Wikidata:{place_name} -> 결과 없음")
+        except Exception as e:
+            debug_messages.append(f"Wikidata:{place_name} -> 요청 실패: {e}")
+
+    try:
+        nominatim_query = f"{place_name or ''} {address}".strip()
+        response = requests.get(
+            "https://nominatim.openstreetmap.org/search",
+            params={
+                "q": nominatim_query,
+                "format": "jsonv2",
+                "limit": 1,
+                "countrycodes": "kr",
+            },
+            headers={"User-Agent": "ai-science-mentor/1.0"},
+            timeout=8,
+        )
+        results = response.json()
+        if results:
+            st.session_state.geocode_debug = f"OpenStreetMap 좌표 조회 성공: {nominatim_query}"
+            return float(results[0]["lat"]), float(results[0]["lon"])
+        debug_messages.append(f"OpenStreetMap:{nominatim_query} -> 결과 없음")
+    except Exception as e:
+        debug_messages.append(f"OpenStreetMap -> 요청 실패: {e}")
+
+    if not api_key:
+        st.session_state.geocode_debug = " | ".join(debug_messages[-6:]) + " | VWorld 키 없음"
+        return None, None
 
     for candidate in address_candidates:
         for endpoint in ("new2coord.do", "jibun2coord.do"):
@@ -140,56 +191,6 @@ def geocode_address(address, place_name=None):
                 debug_messages.append(f"{safe_target} -> status={status}, error={error_text or '없음'}")
             except Exception as e:
                 debug_messages.append(f"{safe_target} -> 요청 실패: {e}")
-
-    if place_name:
-        try:
-            wikidata_query = f'''
-            SELECT ?coord WHERE {{
-              ?item rdfs:label "{place_name.replace('"', '')}"@ko;
-                    wdt:P625 ?coord.
-            }}
-            LIMIT 1
-            '''
-            response = requests.get(
-                "https://query.wikidata.org/sparql",
-                params={"query": wikidata_query, "format": "json"},
-                headers={
-                    "Accept": "application/sparql-results+json",
-                    "User-Agent": "ai-science-mentor/1.0",
-                },
-                timeout=8,
-            )
-            bindings = response.json().get("results", {}).get("bindings", [])
-            if bindings:
-                point_text = bindings[0]["coord"]["value"]
-                if point_text.startswith("Point(") and point_text.endswith(")"):
-                    lng, lat = point_text[6:-1].split()
-                    st.session_state.geocode_debug = f"Wikidata 좌표 조회 성공: {place_name}"
-                    return float(lat), float(lng)
-            debug_messages.append(f"Wikidata:{place_name} -> 결과 없음")
-        except Exception as e:
-            debug_messages.append(f"Wikidata:{place_name} -> 요청 실패: {e}")
-
-    try:
-        nominatim_query = f"{place_name or ''} {address}".strip()
-        response = requests.get(
-            "https://nominatim.openstreetmap.org/search",
-            params={
-                "q": nominatim_query,
-                "format": "jsonv2",
-                "limit": 1,
-                "countrycodes": "kr",
-            },
-            headers={"User-Agent": "ai-science-mentor/1.0"},
-            timeout=8,
-        )
-        results = response.json()
-        if results:
-            st.session_state.geocode_debug = f"OpenStreetMap 좌표 조회 성공: {nominatim_query}"
-            return float(results[0]["lat"]), float(results[0]["lon"])
-        debug_messages.append(f"OpenStreetMap:{nominatim_query} -> 결과 없음")
-    except Exception as e:
-        debug_messages.append(f"OpenStreetMap -> 요청 실패: {e}")
 
     st.session_state.geocode_debug = " | ".join(debug_messages[-6:]) or "VWorld 응답이 비어 있습니다."
     return None, None
