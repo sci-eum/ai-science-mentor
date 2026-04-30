@@ -306,6 +306,9 @@ div[data-testid="stVerticalBlock"]:has(> div.element-container .experiment-marke
 }
 .badge-arxiv { background-color: #4F46E5; }   
 .badge-crossref { background-color: #F59E0B; } 
+.badge-note { background-color: #5A8CFF; }
+.badge-topic { background-color: #10B981; }
+.badge-manual { background-color: #7C3AED; }
 
 .paper-title {
     font-size: 1.3rem;
@@ -328,6 +331,183 @@ div[data-testid="stVerticalBlock"]:has(> div.element-container .experiment-marke
     margin-bottom: 15px;
     display: -webkit-box;
     -webkit-line-clamp: 3; 
+    line-clamp: 3;
     -webkit-box-orient: vertical;
     overflow: hidden;
+}
+
+/* ==========================================
+   6. 내 연구 노트
+   ========================================== */
+.note-hero {
+    background: linear-gradient(-45deg, #0B0F19, #1C244B, #3B4B95, #1E1B4B);
+    background-size: 400% 400%;
+    animation: aurora 15s ease infinite;
+    padding: 3rem 2rem 2.5rem 2rem;
+    border-radius: 24px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+    margin-bottom: 2rem;
+    text-align: center;
+}
+
+.note-hero h2 {
+    color: white;
+    font-size: 2.2rem;
+    font-weight: 900;
+    margin: 0 0 0.75rem 0;
+}
+
+.note-hero p {
+    color: rgba(255, 255, 255, 0.76);
+    font-size: 1.05rem;
+    margin: 0;
+}
+
+div[data-testid="stVerticalBlock"]:has(> div.element-container .note-profile-marker) {
+    background: #FFFFFF !important;
+    border: 1px solid #E2E8F0 !important;
+    border-radius: 20px !important;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05) !important;
+    padding: 2rem !important;
+    margin-bottom: 1.5rem !important;
+}
+
+div[data-testid="stVerticalBlock"]:has(> div.element-container .note-profile-marker) div.stTextInput input {
+    background-color: #F8FAFC !important;
+    color: #1C244B !important;
+    border: 1px solid #E2E8F0 !important;
+    border-radius: 12px !important;
+    height: 48px !important;
+    padding: 0 16px !important;
+}
+
+div[data-testid="stVerticalBlock"]:has(> div.element-container .note-profile-marker) div.stButton button[kind="primary"] {
+    height: 48px !important;
+    background-color: #5A8CFF !important;
+    border: none !important;
+    border-radius: 12px !important;
+    font-weight: 800 !important;
+    color: white !important;
+}
+
+.experiment-required-note {
+    height: 48px;
+    margin-top: 29px;
+    border: 1px solid rgba(255, 255, 255, 0.24);
+    border-radius: 12px;
+    color: rgba(255, 255, 255, 0.82);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    font-size: 0.95rem;
+}
+
+div[data-testid="stVerticalBlock"]:has(> div.element-container .experiment-marker) [data-testid="stExpander"] {
+    background: rgba(255, 255, 255, 0.08) !important;
+    border: 1px solid rgba(255, 255, 255, 0.18) !important;
+    box-shadow: none !important;
+    margin-top: 1rem !important;
+}
+
+div[data-testid="stVerticalBlock"]:has(> div.element-container .experiment-marker) [data-testid="stExpander"]:hover {
+    border-color: rgba(255, 255, 255, 0.45) !important;
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.14) !important;
+}
+
+div[data-testid="stVerticalBlock"]:has(> div.element-container .experiment-marker) [data-testid="stExpander"] summary {
+    color: white !important;
+}
+
+.note-section-title {
+    color: #1E293B;
+    font-size: 1.35rem;
+    font-weight: 900;
+    margin: 0 0 0.35rem 0;
+}
+
+.note-section-caption {
+    color: #64748B;
+    font-size: 0.95rem;
+    margin: 0 0 1.25rem 0;
+}
+
+.note-profile-summary {
+    background: #FFFFFF;
+    border: 1px solid #E2E8F0;
+    border-radius: 18px;
+    padding: 1.5rem;
+    margin-bottom: 0.75rem;
+    box-shadow: 0 6px 20px rgba(15, 23, 42, 0.04);
+}
+
+.note-profile-title {
+    color: #1E293B;
+    font-size: 1.35rem;
+    font-weight: 900;
+    line-height: 1.4;
+    margin-bottom: 0.35rem;
+}
+
+.note-stat-card {
+    background: #FFFFFF;
+    border: 1px solid #E2E8F0;
+    border-radius: 16px;
+    padding: 1.25rem;
+    margin: 1rem 0 1.2rem 0;
+    box-shadow: 0 6px 20px rgba(15, 23, 42, 0.04);
+}
+
+.note-stat-card span {
+    display: block;
+    color: #64748B;
+    font-size: 0.9rem;
+    font-weight: 700;
+    margin-bottom: 0.35rem;
+}
+
+.note-stat-card strong {
+    color: #1C244B;
+    font-size: 2rem;
+    font-weight: 900;
+    line-height: 1;
+}
+
+.note-empty {
+    background: #FFFFFF;
+    border: 1px dashed #CBD5E1;
+    border-radius: 16px;
+    color: #64748B;
+    padding: 2rem;
+    text-align: center;
+    font-weight: 700;
+    margin-top: 1rem;
+}
+
+.note-full-text {
+    display: block;
+    -webkit-line-clamp: unset;
+    line-clamp: unset;
+    white-space: pre-wrap;
+}
+
+[data-testid="stExpander"] {
+    background: #FFFFFF !important;
+    border: 1px solid #E2E8F0 !important;
+    border-radius: 16px !important;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.02) !important;
+    margin-bottom: 1rem !important;
+    overflow: hidden !important;
+    transition: box-shadow 0.2s ease, border-color 0.2s ease !important;
+}
+
+[data-testid="stExpander"]:hover {
+    border-color: #5A8CFF !important;
+    box-shadow: 0 12px 25px rgba(90, 140, 255, 0.1) !important;
+}
+
+[data-testid="stExpander"] summary {
+    color: #1E293B !important;
+    font-weight: 800 !important;
+    line-height: 1.4 !important;
 }
