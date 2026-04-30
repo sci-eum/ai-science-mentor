@@ -71,6 +71,7 @@ def geocode_address(address):
     if referer:
         headers["Referer"] = referer
 
+    domain = referer or "http://map.vworld.kr/"
     address_candidates = [
         address,
         address.replace("충청남도", "충남").replace("충청북도", "충북"),
@@ -79,6 +80,32 @@ def geocode_address(address):
     ]
     address_candidates = list(dict.fromkeys(address_candidates))
     debug_messages = []
+
+    for candidate in address_candidates:
+        for endpoint in ("new2coord.do", "jibun2coord.do"):
+            safe_target = f"{candidate} / legacy:{endpoint}"
+            try:
+                response = requests.get(
+                    f"http://apis.vworld.kr/{endpoint}",
+                    params={
+                        "q": candidate,
+                        "apiKey": api_key,
+                        "domain": domain,
+                        "output": "json",
+                        "epsg": "EPSG:4326",
+                    },
+                    headers=headers,
+                    timeout=8,
+                )
+                data = response.json()
+                lng = data.get("EPSG_4326_X")
+                lat = data.get("EPSG_4326_Y")
+                if lat and lng:
+                    st.session_state.geocode_debug = f"VWorld 지오코딩 성공: {safe_target}"
+                    return float(lat), float(lng)
+                debug_messages.append(f"{safe_target} -> {str(data)[:120]}")
+            except Exception as e:
+                debug_messages.append(f"{safe_target} -> 요청 실패: {e}")
 
     for candidate in address_candidates:
         for address_type in ("road", "parcel", "ROAD", "PARCEL"):
