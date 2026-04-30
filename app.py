@@ -60,27 +60,28 @@ def geocode_address(address):
     if not api_key:
         return None, None
 
-    try:
-        response = requests.get(
-            "https://api.vworld.kr/req/address",
-            params={
-                "service": "address",
-                "request": "getcoord",
-                "version": "2.0",
-                "crs": "epsg:4326",
-                "type": "ROAD",
-                "address": address,
-                "format": "json",
-                "key": api_key,
-            },
-            timeout=5,
-        )
-        data = response.json()
-        point = data.get("response", {}).get("result", {}).get("point")
-        if point:
-            return float(point["y"]), float(point["x"])
-    except Exception:
-        pass
+    for address_type in ("ROAD", "PARCEL"):
+        try:
+            response = requests.get(
+                "https://api.vworld.kr/req/address",
+                params={
+                    "service": "address",
+                    "request": "getcoord",
+                    "version": "2.0",
+                    "crs": "epsg:4326",
+                    "type": address_type,
+                    "address": address,
+                    "format": "json",
+                    "key": api_key,
+                },
+                timeout=5,
+            )
+            data = response.json()
+            point = data.get("response", {}).get("result", {}).get("point")
+            if point:
+                return float(point["y"]), float(point["x"])
+        except Exception:
+            pass
     return None, None
 
 def build_school_profile(profile):
@@ -94,6 +95,27 @@ def build_school_profile(profile):
         "lat": profile.get("school_lat"),
         "lng": profile.get("school_lng"),
     }
+
+def update_school_coordinates_if_missing(school):
+    if not st.session_state.get("user") or not school or school.get("lat") and school.get("lng"):
+        return school, None
+
+    lat, lng = geocode_address(school.get("address"))
+    if not lat or not lng:
+        return school, "학교 주소를 좌표로 변환하지 못했습니다. VWorld 키, 주소 형식, 앱 재시작 여부를 확인해 주세요."
+
+    try:
+        supabase.table("user_profiles").update({
+            "school_lat": lat,
+            "school_lng": lng,
+        }).eq("id", st.session_state.user.id).execute()
+    except Exception as e:
+        return school, f"좌표는 계산됐지만 Supabase 저장에 실패했습니다: {e}"
+
+    school["lat"] = lat
+    school["lng"] = lng
+    st.session_state.school = school
+    return school, None
 
 def fetch_open_labs_by_area(school):
     if not supabase:
@@ -505,23 +527,29 @@ elif menu == "실험 설계":
         st.markdown('<span class="experiment-marker"></span>', unsafe_allow_html=True)
         st.markdown("<h2 style='text-align: center; color: white; margin-bottom: 1.5rem;'>🧪 대화형 실험 설계 매뉴얼</h2>", unsafe_allow_html=True)
         
-        col1, col2 = st.columns(2)
-        with col1:
+        topic_col, guide_col = st.columns([5, 1.6])
+        with topic_col:
             st.markdown("<span class='label-essential'>🎯 탐구 주제 (필수)</span>", unsafe_allow_html=True)
             topic = st.text_input("topic", placeholder="비타민 C 항산화 반응 속도 측정 등", label_visibility="collapsed")
-            
-            st.markdown("<span class='label-optional'>➡️ 독립 변인 (선택)</span>", unsafe_allow_html=True)
-            ind_var = st.text_input("ind", placeholder="비타민 C 수용액의 농도 등", label_visibility="collapsed")
-            
-        with col2:
-            st.markdown("<span class='label-optional'>📈 종속 변인 (선택)</span>", unsafe_allow_html=True)
-            dep_var = st.text_input("dep", placeholder="아이오딘 용액의 탈색 시간 등", label_visibility="collapsed")
-            
-            st.markdown("<span class='label-optional'>🧫 준비물 (선택)</span>", unsafe_allow_html=True)
-            materials = st.text_input("mat", placeholder="아이오딘 용액, 전분, 비커 등", label_visibility="collapsed")
-            
-        st.markdown("<span class='label-optional'>💡 상세 아이디어 및 요청 사항 (선택)</span>", unsafe_allow_html=True)
-        idea_details = st.text_area("details", placeholder="실험 과정에서 특히 신경 쓰고 싶은 부분을 자유롭게 적어주세요.", label_visibility="collapsed")
+        with guide_col:
+            st.markdown("<div class='experiment-required-note'>필수 입력</div>", unsafe_allow_html=True)
+
+        ind_var, dep_var, materials, idea_details = "", "", "", ""
+        with st.expander("선택 입력 열기: 변인, 준비물, 상세 요청 사항", expanded=False):
+            col1, col2 = st.columns(2)
+            with col1:
+                st.markdown("<span class='label-optional'>➡️ 독립 변인 (선택)</span>", unsafe_allow_html=True)
+                ind_var = st.text_input("ind", placeholder="비타민 C 수용액의 농도 등", label_visibility="collapsed")
+
+                st.markdown("<span class='label-optional'>🧫 준비물 (선택)</span>", unsafe_allow_html=True)
+                materials = st.text_input("mat", placeholder="아이오딘 용액, 전분, 비커 등", label_visibility="collapsed")
+
+            with col2:
+                st.markdown("<span class='label-optional'>📈 종속 변인 (선택)</span>", unsafe_allow_html=True)
+                dep_var = st.text_input("dep", placeholder="아이오딘 용액의 탈색 시간 등", label_visibility="collapsed")
+
+                st.markdown("<span class='label-optional'>💡 상세 아이디어 및 요청 사항 (선택)</span>", unsafe_allow_html=True)
+                idea_details = st.text_area("details", placeholder="실험 과정에서 특히 신경 쓰고 싶은 부분을 자유롭게 적어주세요.", label_visibility="collapsed", height=96)
         
         combined_idea = f"주제: {topic}\n독립변인: {ind_var}\n종속변인: {dep_var}\n준비물: {materials}\n상세내용: {idea_details}"
         
@@ -610,7 +638,13 @@ elif menu == "주변 오픈랩":
         st.info(f"기준 학교: {school.get('name')} | {school.get('address') or '주소 정보 없음'}")
 
         if not school.get("lat") or not school.get("lng"):
-            st.warning("학교 좌표가 아직 저장되지 않았습니다. 그래도 주소를 기준으로 같은 시/군/구, 같은 시도, 전국 순서로 보여줍니다.")
+            with st.spinner("학교 주소를 좌표로 변환해 다시 저장하는 중입니다..."):
+                school, geocode_error = update_school_coordinates_if_missing(school)
+            if geocode_error:
+                st.warning("학교 좌표가 아직 저장되지 않았습니다. 그래도 주소를 기준으로 같은 시/군/구, 같은 시도, 전국 순서로 보여줍니다.")
+                st.caption(geocode_error)
+            else:
+                st.success(f"학교 좌표를 저장했습니다: {school.get('lat'):.6f}, {school.get('lng'):.6f}")
 
         labs, error = fetch_open_labs_by_area(school)
 
@@ -632,106 +666,175 @@ elif menu == "주변 오픈랩":
 # 🗄️ 5. 내 연구 노트
 # ==========================================
 elif menu == "내 연구 노트":
-    st.title("🗄️ 내 연구 포트폴리오")
+    st.markdown("""
+        <div class="note-hero">
+            <span class="note-marker"></span>
+            <h2>🗄️ 내 연구 노트</h2>
+            <p>찾아둔 논문, AI가 제안한 탐구 주제, 실험 매뉴얼을 한곳에 모아 관리하세요.</p>
+        </div>
+    """, unsafe_allow_html=True)
+
     if not st.session_state.user: st.warning("왼쪽 사이드바에서 로그인 해주세요.")
     else:
         if not st.session_state.school or st.session_state.profile_edit:
-            st.subheader("👋 프로필을 설정해 주세요.")
-            role = st.radio("역할", ["👨‍🎓 학생", "👨‍🏫 교사"])
-            keyword = st.text_input("학교 이름 검색")
-            if st.button("검색") and keyword:
-                try:
-                    res = requests.get("https://open.neis.go.kr/hub/schoolInfo", params={"Type": "json", "pIndex": 1, "pSize": 5, "SCHUL_NM": keyword}).json()
-                    st.session_state.search_results = res.get("schoolInfo", [{}, {"row": []}])[1].get("row", [])
-                except: st.error("네트워크 오류")
+            with st.container():
+                st.markdown('<span class="note-profile-marker"></span>', unsafe_allow_html=True)
+                st.markdown("<h3 class='note-section-title'>👋 프로필 설정</h3>", unsafe_allow_html=True)
+                st.markdown("<p class='note-section-caption'>학교 정보를 연결하면 주변 오픈랩 추천과 연구 노트 저장 기능을 더 정확하게 사용할 수 있어요.</p>", unsafe_allow_html=True)
+                role_col, search_col, button_col = st.columns([2, 5, 1.4])
+                with role_col:
+                    role = st.radio("역할", ["👨‍🎓 학생", "👨‍🏫 교사"], horizontal=True, label_visibility="collapsed")
+                with search_col:
+                    keyword = st.text_input("학교 이름 검색", placeholder="학교 이름을 입력하세요", label_visibility="collapsed")
+                with button_col:
+                    search_clicked = st.button("검색", use_container_width=True, type="primary")
+
+                if search_clicked and keyword:
+                    try:
+                        res = requests.get("https://open.neis.go.kr/hub/schoolInfo", params={"Type": "json", "pIndex": 1, "pSize": 5, "SCHUL_NM": keyword}).json()
+                        st.session_state.search_results = res.get("schoolInfo", [{}, {"row": []}])[1].get("row", [])
+                    except: st.error("네트워크 오류")
             
             if st.session_state.get('search_results'):
+                st.write("")
                 for idx, school in enumerate(st.session_state.search_results):
                     s_name, s_code, s_addr = school.get('SCHUL_NM'), school.get('SD_SCHUL_CODE'), school.get('ORG_RDNMA')
-                    col1, col2 = st.columns([3, 1])
-                    with col1: st.write(f"**{s_name}** ({s_addr})")
-                    with col2:
-                        if st.button("선택", key=f"profile_school_{s_code}_{idx}"):
-                            try:
-                                school_lat, school_lng = geocode_address(s_addr)
-                                profile = {
-                                    "id": st.session_state.user.id,
-                                    "role": role,
-                                    "school_code": s_code,
-                                    "school_name": s_name,
-                                    "school_address": s_addr,
-                                    "school_region": extract_region(s_addr),
-                                    "school_lat": school_lat,
-                                    "school_lng": school_lng,
-                                }
+                    with st.container(border=True):
+                        col1, col2 = st.columns([5, 1])
+                        with col1:
+                            st.markdown(f"""
+                                <div class="paper-source-badge badge-note">학교 프로필</div>
+                                <div class="paper-title">{escape(str(s_name))}</div>
+                                <div class="paper-authors">{escape(str(s_addr or '주소 정보 없음'))}</div>
+                            """, unsafe_allow_html=True)
+                        with col2:
+                            if st.button("선택", key=f"profile_school_{s_code}_{idx}", use_container_width=True):
                                 try:
-                                    supabase.table("user_profiles").upsert(profile).execute()
-                                except Exception:
-                                    legacy_profile = {
+                                    school_lat, school_lng = geocode_address(s_addr)
+                                    profile = {
                                         "id": st.session_state.user.id,
                                         "role": role,
                                         "school_code": s_code,
                                         "school_name": s_name,
+                                        "school_address": s_addr,
+                                        "school_region": extract_region(s_addr),
+                                        "school_lat": school_lat,
+                                        "school_lng": school_lng,
                                     }
-                                    supabase.table("user_profiles").upsert(legacy_profile).execute()
-                                    st.warning("위치 컬럼이 아직 없어 기본 프로필만 저장했습니다. Supabase 마이그레이션을 적용하면 주변 오픈랩 추천이 활성화됩니다.")
-                                st.session_state.role, st.session_state.school = role, {
-                                    "name": s_name,
-                                    "code": s_code,
-                                    "address": s_addr,
-                                    "region": extract_region(s_addr),
-                                    "city": extract_city(s_addr),
-                                    "lat": school_lat,
-                                    "lng": school_lng,
-                                }
-                                st.session_state.search_results = None
-                                st.session_state.profile_edit = False
-                                st.rerun()
-                            except: st.error("저장 실패")
+                                    try:
+                                        supabase.table("user_profiles").upsert(profile).execute()
+                                    except Exception:
+                                        legacy_profile = {
+                                            "id": st.session_state.user.id,
+                                            "role": role,
+                                            "school_code": s_code,
+                                            "school_name": s_name,
+                                        }
+                                        supabase.table("user_profiles").upsert(legacy_profile).execute()
+                                        st.warning("위치 컬럼이 아직 없어 기본 프로필만 저장했습니다. Supabase 마이그레이션을 적용하면 주변 오픈랩 추천이 활성화됩니다.")
+                                    st.session_state.role, st.session_state.school = role, {
+                                        "name": s_name,
+                                        "code": s_code,
+                                        "address": s_addr,
+                                        "region": extract_region(s_addr),
+                                        "city": extract_city(s_addr),
+                                        "lat": school_lat,
+                                        "lng": school_lng,
+                                    }
+                                    st.session_state.search_results = None
+                                    st.session_state.profile_edit = False
+                                    st.rerun()
+                                except: st.error("저장 실패")
         else:
-            profile_col, action_col = st.columns([4, 1])
-            with profile_col:
-                st.caption(f"현재 프로필: {st.session_state.role} | {st.session_state.school.get('name')}")
+            st.markdown(f"""
+                <div class="note-profile-summary">
+                    <div>
+                        <span class="paper-source-badge badge-note">현재 프로필</span>
+                        <div class="note-profile-title">{escape(str(st.session_state.school.get('name')))}</div>
+                        <div class="paper-authors">{escape(str(st.session_state.role))} | {escape(str(st.session_state.school.get('address') or '주소 정보 없음'))}</div>
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
+            _, action_col = st.columns([5, 1])
             with action_col:
                 if st.button("프로필 수정", use_container_width=True):
                     st.session_state.profile_edit = True
                     st.rerun()
 
             if "학생" in st.session_state.role:
+                saved_list, topic_list, manual_list = [], [], []
+                try:
+                    saved_list = supabase.table("saved_papers").select("*").eq("user_id", st.session_state.user.id).order("created_at", desc=True).execute().data or []
+                    topic_list = supabase.table("saved_topics").select("*").eq("user_id", st.session_state.user.id).order("created_at", desc=True).execute().data or []
+                    manual_list = supabase.table("saved_manuals").select("*").eq("user_id", st.session_state.user.id).order("created_at", desc=True).execute().data or []
+                except Exception:
+                    st.error("저장된 연구 노트를 불러오지 못했습니다.")
+
+                stat_p, stat_t, stat_m = st.columns(3)
+                stat_p.markdown(f"<div class='note-stat-card'><span>저장된 논문</span><strong>{len(saved_list)}</strong></div>", unsafe_allow_html=True)
+                stat_t.markdown(f"<div class='note-stat-card'><span>추천 주제</span><strong>{len(topic_list)}</strong></div>", unsafe_allow_html=True)
+                stat_m.markdown(f"<div class='note-stat-card'><span>실험 매뉴얼</span><strong>{len(manual_list)}</strong></div>", unsafe_allow_html=True)
+
                 tab_p, tab_t, tab_m = st.tabs(["📚 저장된 논문", "💡 추천 실험 주제", "📋 실험 매뉴얼"])
                 with tab_p:
-                    try:
-                        saved_list = supabase.table("saved_papers").select("*").eq("user_id", st.session_state.user.id).order("created_at", desc=True).execute().data
-                        if not saved_list: st.write("저장된 논문이 없습니다.")
-                        for paper in saved_list:
-                            with st.expander(f"⭐ {paper['title']}"):
-                                st.write(f"**저자:** {paper['authors']} | **발행:** {paper['year']}년")
-                                st.link_button("📄 원문 링크", paper['url'])
-                                if st.button("🗑️ 삭제", key=f"del_p_{paper['id']}"):
+                    if not saved_list:
+                        st.markdown("<div class='note-empty'>아직 저장된 논문이 없습니다. 논문 찾기에서 관심 있는 자료를 저장해 보세요.</div>", unsafe_allow_html=True)
+                    for paper in saved_list:
+                        paper_title = str(paper.get('title') or '제목 없음')
+                        paper_year = str(paper.get('year') or '연도 미상')
+                        paper_source = str(paper.get('source') or 'Paper')
+                        paper_label_title = paper_title if len(paper_title) <= 80 else f"{paper_title[:80]}..."
+                        with st.expander(f"📚 {paper_label_title} · {paper_source} · {paper_year}", expanded=False):
+                            st.markdown(f"""
+                                <div class="paper-source-badge badge-arxiv">{escape(paper_source)} • {escape(paper_year)}</div>
+                                <div class="paper-title">{escape(paper_title)}</div>
+                                <div class="paper-authors">저자: {escape(str(paper.get('authors') or '정보 없음'))}</div>
+                                <div class="paper-abstract">{escape(str(paper.get('summary') or '초록 정보가 없습니다.'))}</div>
+                            """, unsafe_allow_html=True)
+                            link_col, delete_col, _ = st.columns([2, 1.2, 5])
+                            with link_col:
+                                st.link_button("📄 원문 링크", paper['url'], use_container_width=True)
+                            with delete_col:
+                                if st.button("🗑️ 삭제", key=f"del_p_{paper['id']}", use_container_width=True):
                                     supabase.table("saved_papers").delete().eq("id", paper['id']).execute()
                                     st.rerun()
-                    except: pass
                 with tab_t:
-                    try:
-                        topic_list = supabase.table("saved_topics").select("*").eq("user_id", st.session_state.user.id).order("created_at", desc=True).execute().data
-                        if not topic_list: st.write("저장된 주제가 없습니다.")
-                        for topic in topic_list:
-                            with st.expander(f"💡 주제 ({topic['created_at'][:10]})"):
-                                st.write(topic['topic_content'])
-                                if st.button("🗑️ 삭제", key=f"del_t_{topic['id']}"):
-                                    supabase.table("saved_topics").delete().eq("id", topic['id']).execute()
-                                    st.rerun()
-                    except: pass
+                    if not topic_list:
+                        st.markdown("<div class='note-empty'>저장된 주제가 없습니다. 논문 분석 결과에서 탐구 주제를 저장하면 이곳에 쌓입니다.</div>", unsafe_allow_html=True)
+                    for topic in topic_list:
+                        topic_content = str(topic.get('topic_content') or '내용 없음')
+                        topic_date = str(topic.get('created_at') or '')[:10]
+                        topic_title = "추천 실험 주제"
+                        for line in topic_content.splitlines():
+                            clean_line = line.strip()
+                            if clean_line.startswith("제목:"):
+                                topic_title = clean_line.replace("제목:", "", 1).strip() or topic_title
+                                break
+                        topic_label_title = topic_title if len(topic_title) <= 80 else f"{topic_title[:80]}..."
+                        with st.expander(f"💡 {topic_label_title} · {topic_date}", expanded=False):
+                            st.markdown(f"""
+                                <div class="paper-source-badge badge-topic">추천 주제 • {escape(topic_date)}</div>
+                                <div class="paper-title">{escape(topic_title)}</div>
+                                <div class="paper-abstract note-full-text">{escape(topic_content)}</div>
+                            """, unsafe_allow_html=True)
+                            if st.button("🗑️ 삭제", key=f"del_t_{topic['id']}"):
+                                supabase.table("saved_topics").delete().eq("id", topic['id']).execute()
+                                st.rerun()
                 with tab_m:
-                    try:
-                        manual_list = supabase.table("saved_manuals").select("*").eq("user_id", st.session_state.user.id).order("created_at", desc=True).execute().data
-                        if not manual_list: st.write("저장된 매뉴얼이 없습니다.")
-                        for manual in manual_list:
-                            with st.expander(f"🧪 원본 아이디어: {manual['idea']}"):
-                                st.write(manual['manual_content'])
-                                if st.button("🗑️ 삭제", key=f"del_m_{manual['id']}"):
-                                    supabase.table("saved_manuals").delete().eq("id", manual['id']).execute()
-                                    st.rerun()
-                    except: pass
+                    if not manual_list:
+                        st.markdown("<div class='note-empty'>저장된 매뉴얼이 없습니다. 실험 설계에서 만든 매뉴얼을 저장해 보세요.</div>", unsafe_allow_html=True)
+                    for manual in manual_list:
+                        manual_idea = str(manual.get('idea') or '원본 아이디어 없음')
+                        manual_label_title = manual_idea if len(manual_idea) <= 80 else f"{manual_idea[:80]}..."
+                        with st.expander(f"📋 {manual_label_title}", expanded=False):
+                            st.markdown(f"""
+                                <div class="paper-source-badge badge-manual">실험 매뉴얼</div>
+                                <div class="paper-title">{escape(manual_idea)}</div>
+                            """, unsafe_allow_html=True)
+                            st.markdown(manual.get('manual_content') or '내용 없음')
+                            st.divider()
+                            if st.button("🗑️ 삭제", key=f"del_m_{manual['id']}"):
+                                supabase.table("saved_manuals").delete().eq("id", manual['id']).execute()
+                                st.rerun()
             else:
-                st.write(f"**{st.session_state.school['name']}** 학생 포트폴리오 열람 기능 준비 중입니다.")
+                st.markdown(f"<div class='note-empty'><strong>{escape(str(st.session_state.school['name']))}</strong> 학생 포트폴리오 열람 기능은 준비 중입니다.</div>", unsafe_allow_html=True)
