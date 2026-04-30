@@ -275,6 +275,7 @@ def fetch_open_labs_by_area(school):
 
 def render_open_lab_card(lab):
     with st.container(border=True):
+        lab_key = str(lab.get("id") or f"{lab.get('name', '')}-{lab.get('address', '')}")
         distance = lab.get("distance_km")
         distance_text = f"{distance:.1f}km" if distance is not None else "거리 계산 전"
         area_group = escape(str(lab.get("area_group") or "추천"))
@@ -303,12 +304,12 @@ def render_open_lab_card(lab):
             if homepage_url:
                 st.link_button("홈페이지 보기", homepage_url, use_container_width=True)
             else:
-                st.button("홈페이지 없음", disabled=True, use_container_width=True)
+                st.button("홈페이지 없음", disabled=True, use_container_width=True, key=f"openlab_home_none_{lab_key}")
         with c2:
             if program_url:
                 st.link_button("상세 정보", program_url, use_container_width=True)
             else:
-                st.button("상세 링크 없음", disabled=True, use_container_width=True)
+                st.button("상세 링크 없음", disabled=True, use_container_width=True, key=f"openlab_program_none_{lab_key}")
 
 # ==========================================
 # 2. 전역 상태(Session State) 초기화
