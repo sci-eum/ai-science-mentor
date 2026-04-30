@@ -52,36 +52,69 @@ def haversine_km(lat1, lng1, lat2, lng2):
 def geocode_address(address):
     """VWorld 주소 좌표 변환. 키가 없거나 실패하면 None을 반환해 지역 기반 추천으로 대체한다."""
     if not address:
+        st.session_state.geocode_debug = "주소가 비어 있습니다."
         return None, None
     try:
         api_key = st.secrets.get("GEOCODING_API_KEY")
     except Exception:
         api_key = None
     if not api_key:
+        st.session_state.geocode_debug = "Streamlit Secrets에서 GEOCODING_API_KEY를 찾지 못했습니다."
         return None, None
 
-    for address_type in ("ROAD", "PARCEL"):
-        try:
-            response = requests.get(
-                "https://api.vworld.kr/req/address",
-                params={
-                    "service": "address",
-                    "request": "getcoord",
-                    "version": "2.0",
-                    "crs": "epsg:4326",
-                    "type": address_type,
-                    "address": address,
-                    "format": "json",
-                    "key": api_key,
-                },
-                timeout=5,
-            )
-            data = response.json()
-            point = data.get("response", {}).get("result", {}).get("point")
-            if point:
-                return float(point["y"]), float(point["x"])
-        except Exception:
-            pass
+    try:
+        referer = st.secrets.get("VWORLD_REFERER") or st.secrets.get("APP_URL")
+    except Exception:
+        referer = None
+
+    headers = {"User-Agent": "ai-science-mentor/1.0"}
+    if referer:
+        headers["Referer"] = referer
+
+    address_candidates = [
+        address,
+        address.replace("충청남도", "충남").replace("충청북도", "충북"),
+        address.replace("전라남도", "전남").replace("전라북도", "전북"),
+        address.replace("경상남도", "경남").replace("경상북도", "경북"),
+    ]
+    address_candidates = list(dict.fromkeys(address_candidates))
+    debug_messages = []
+
+    for candidate in address_candidates:
+        for address_type in ("road", "parcel", "ROAD", "PARCEL"):
+            params = {
+                "service": "address",
+                "request": "getcoord",
+                "version": "2.0",
+                "crs": "epsg:4326",
+                "type": address_type,
+                "address": candidate,
+                "format": "json",
+                "refine": "true",
+                "simple": "false",
+                "key": api_key,
+            }
+            safe_target = f"{candidate} / {address_type}"
+            try:
+                response = requests.get(
+                    "https://api.vworld.kr/req/address",
+                    params=params,
+                    headers=headers,
+                    timeout=5,
+                )
+                data = response.json()
+                vworld_response = data.get("response", {})
+                status = vworld_response.get("status")
+                error_text = vworld_response.get("error", {}).get("text")
+                point = data.get("response", {}).get("result", {}).get("point")
+                if point:
+                    st.session_state.geocode_debug = f"VWorld 지오코딩 성공: {safe_target}"
+                    return float(point["y"]), float(point["x"])
+                debug_messages.append(f"{safe_target} -> status={status}, error={error_text or '없음'}")
+            except Exception as e:
+                debug_messages.append(f"{safe_target} -> 요청 실패: {e}")
+
+    st.session_state.geocode_debug = " | ".join(debug_messages[-6:]) or "VWorld 응답이 비어 있습니다."
     return None, None
 
 def build_school_profile(profile):
@@ -643,6 +676,8 @@ elif menu == "주변 오픈랩":
             if geocode_error:
                 st.warning("학교 좌표가 아직 저장되지 않았습니다. 그래도 주소를 기준으로 같은 시/군/구, 같은 시도, 전국 순서로 보여줍니다.")
                 st.caption(geocode_error)
+                if st.session_state.get("geocode_debug"):
+                    st.caption(f"VWorld 응답: {st.session_state.geocode_debug}")
             else:
                 st.success(f"학교 좌표를 저장했습니다: {school.get('lat'):.6f}, {school.get('lng'):.6f}")
 
