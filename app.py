@@ -257,7 +257,7 @@ def fetch_open_labs_by_area(school):
             lab["area_group"] = "해당 시/군/구"
             lab["area_rank"] = 0
         elif school_region and lab_region == school_region:
-            lab["area_group"] = "해당 시도"
+            lab["area_group"] = "같은 도"
             lab["area_rank"] = 1
         else:
             lab["area_group"] = "전국"
@@ -278,7 +278,7 @@ def render_open_lab_card(lab):
         distance = lab.get("distance_km")
         distance_text = f"{distance:.1f}km" if distance is not None else "거리 계산 전"
         area_group = escape(str(lab.get("area_group") or "추천"))
-        category = escape(str(lab.get("category") or "오픈랩"))
+        category = escape(str(lab.get("category") or "진로체험처"))
         title = escape(str(lab.get("name") or "이름 미상"))
         host = escape(str(lab.get("host_org") or "운영기관 정보 없음"))
         address = escape(str(lab.get("address") or "주소 정보 없음"))
@@ -306,9 +306,9 @@ def render_open_lab_card(lab):
                 st.button("홈페이지 없음", disabled=True, use_container_width=True)
         with c2:
             if program_url:
-                st.link_button("프로그램 안내", program_url, use_container_width=True)
+                st.link_button("상세 정보", program_url, use_container_width=True)
             else:
-                st.button("프로그램 링크 없음", disabled=True, use_container_width=True)
+                st.button("상세 링크 없음", disabled=True, use_container_width=True)
 
 # ==========================================
 # 2. 전역 상태(Session State) 초기화
@@ -429,7 +429,7 @@ with st.container():
     st.markdown('<span class="top-menu-marker"></span>', unsafe_allow_html=True)
     menu = st.radio(
         "메뉴 선택", 
-        ["메인", "논문 찾기", "실험 설계", "주변 오픈랩", "내 연구 노트"],
+        ["메인", "논문 찾기", "실험 설계", "주변 진로체험처", "내 연구 노트"],
         horizontal=True, 
         label_visibility="collapsed" 
     )
@@ -449,7 +449,7 @@ if menu == "메인":
     features = [
         ("🔍", "논문 검색", "글로벌 DB 통합 탐색"), 
         ("🧪", "실험 설계", "AI 기반 안전 매뉴얼"), 
-        ("🧭", "주변 오픈랩", "학교 위치 기반 체험 추천"),
+        ("🧭", "주변 진로체험처", "학교 위치 기반 체험 추천"),
         ("🗄️", "연구 노트", "나만의 탐구 포트폴리오")
     ]
     for col, (i, t, d) in zip([c1, c2, c3, c4], features):
@@ -752,14 +752,14 @@ elif menu == "실험 설계":
                             st.error("저장 실패")
 
 # ==========================================
-# 🧭 4. 주변 오픈랩
+# 🧭 4. 주변 진로체험처
 # ==========================================
-elif menu == "주변 오픈랩":
+elif menu == "주변 진로체험처":
     st.markdown("""
         <div class="openlab-hero">
             <span class="openlab-marker"></span>
-            <h2>🧭 학교 주변 오픈랩</h2>
-            <p>학교 위치를 기준으로 과학관, 과학교육원, 대학 오픈랩 프로그램을 가까운 순서로 정리합니다.</p>
+            <h2>🧭 학교 주변 진로체험처</h2>
+            <p>학교 위치를 기준으로 연구와 진로 탐색에 참고할 만한 공공기관, 대학, 청소년단체를 가까운 순서로 정리합니다.</p>
         </div>
     """, unsafe_allow_html=True)
 
@@ -781,7 +781,7 @@ elif menu == "주변 오픈랩":
             with st.spinner("학교 주소를 좌표로 변환해 다시 저장하는 중입니다..."):
                 school, geocode_error = update_school_coordinates_if_missing(school)
             if geocode_error:
-                st.warning("학교 좌표가 아직 저장되지 않았습니다. 그래도 주소를 기준으로 같은 시/군/구, 같은 시도, 전국 순서로 보여줍니다.")
+                st.warning("학교 좌표가 아직 저장되지 않았습니다. 그래도 주소를 기준으로 같은 시/군/구, 같은 도, 전국 순서로 보여줍니다.")
                 st.caption(geocode_error)
                 if st.session_state.get("geocode_debug"):
                     st.caption(f"VWorld 응답: {st.session_state.geocode_debug}")
@@ -792,25 +792,41 @@ elif menu == "주변 오픈랩":
 
         if error:
             st.error(error)
-            st.info("Supabase에 open_labs 테이블과 공개 프로그램 데이터가 준비되어 있는지 확인해 주세요.")
+            st.info("Supabase에 open_labs 테이블과 진로체험처 데이터가 준비되어 있는지 확인해 주세요.")
         elif not labs:
-            st.warning("표시할 오픈랩을 찾지 못했습니다. open_labs 데이터를 추가해 주세요.")
+            st.warning("표시할 진로체험처를 찾지 못했습니다. open_labs 데이터를 추가해 주세요.")
         else:
+            total_count = len(labs)
             local_count = sum(1 for lab in labs if lab.get("area_rank") == 0)
-            region_count = sum(1 for lab in labs if lab.get("area_rank") == 1)
-            national_count = sum(1 for lab in labs if lab.get("area_rank") == 2)
+            province_count = sum(1 for lab in labs if lab.get("area_rank") in (0, 1))
+            national_count = total_count
             stat_all, stat_local, stat_region, stat_national = st.columns(4)
-            stat_all.markdown(f"<div class='openlab-stat-card'><span>전체 추천</span><strong>{len(labs)}</strong></div>", unsafe_allow_html=True)
-            stat_local.markdown(f"<div class='openlab-stat-card'><span>시/군/구</span><strong>{local_count}</strong></div>", unsafe_allow_html=True)
-            stat_region.markdown(f"<div class='openlab-stat-card'><span>같은 시도</span><strong>{region_count}</strong></div>", unsafe_allow_html=True)
+            stat_all.markdown(f"<div class='openlab-stat-card'><span>전체 진로체험처</span><strong>{total_count}</strong></div>", unsafe_allow_html=True)
+            stat_local.markdown(f"<div class='openlab-stat-card'><span>같은 시/군/구</span><strong>{local_count}</strong></div>", unsafe_allow_html=True)
+            stat_region.markdown(f"<div class='openlab-stat-card'><span>같은 도</span><strong>{province_count}</strong></div>", unsafe_allow_html=True)
             stat_national.markdown(f"<div class='openlab-stat-card'><span>전국</span><strong>{national_count}</strong></div>", unsafe_allow_html=True)
 
-            current_group = None
-            for lab in labs:
-                if lab.get("area_group") != current_group:
-                    current_group = lab.get("area_group")
-                    st.markdown(f"<div class='openlab-group-title'>{escape(str(current_group))}</div>", unsafe_allow_html=True)
-                render_open_lab_card(lab)
+            local_labs = [lab for lab in labs if lab.get("area_rank") == 0]
+            if not local_labs:
+                st.warning("현재 학교와 같은 시/군/구에 등록된 진로체험처가 없습니다.")
+            else:
+                page_size = 5
+                total_pages = (len(local_labs) + page_size - 1) // page_size
+                page_options = [str(page) for page in range(1, total_pages + 1)]
+                page_choice = st.radio(
+                    "페이지",
+                    page_options,
+                    horizontal=True,
+                    label_visibility="collapsed",
+                    key="openlab_local_page",
+                )
+                page_index = int(page_choice) - 1
+                start = page_index * page_size
+                end = start + page_size
+
+                st.markdown("<div class='openlab-group-title'>해당 시/군/구</div>", unsafe_allow_html=True)
+                for lab in local_labs[start:end]:
+                    render_open_lab_card(lab)
 
 # ==========================================
 # 🗄️ 5. 내 연구 노트
@@ -830,7 +846,7 @@ elif menu == "내 연구 노트":
             with st.container():
                 st.markdown('<span class="note-profile-marker"></span>', unsafe_allow_html=True)
                 st.markdown("<h3 class='note-section-title'>👋 프로필 설정</h3>", unsafe_allow_html=True)
-                st.markdown("<p class='note-section-caption'>학교 정보를 연결하면 주변 오픈랩 추천과 연구 노트 저장 기능을 더 정확하게 사용할 수 있어요.</p>", unsafe_allow_html=True)
+                st.markdown("<p class='note-section-caption'>학교 정보를 연결하면 주변 진로체험처 추천과 연구 노트 저장 기능을 더 정확하게 사용할 수 있어요.</p>", unsafe_allow_html=True)
                 role_col, search_col, button_col = st.columns([2, 5, 1.4])
                 with role_col:
                     role = st.radio("역할", ["👨‍🎓 학생", "👨‍🏫 교사"], horizontal=True, label_visibility="collapsed")
@@ -881,7 +897,7 @@ elif menu == "내 연구 노트":
                                             "school_name": s_name,
                                         }
                                         supabase.table("user_profiles").upsert(legacy_profile).execute()
-                                        st.warning("위치 컬럼이 아직 없어 기본 프로필만 저장했습니다. Supabase 마이그레이션을 적용하면 주변 오픈랩 추천이 활성화됩니다.")
+                                        st.warning("위치 컬럼이 아직 없어 기본 프로필만 저장했습니다. Supabase 마이그레이션을 적용하면 주변 진로체험처 추천이 활성화됩니다.")
                                     st.session_state.role, st.session_state.school = role, {
                                         "name": s_name,
                                         "code": s_code,
