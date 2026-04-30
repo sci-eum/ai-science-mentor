@@ -616,3 +616,29 @@ div[data-testid="stVerticalBlock"]:has(> div.element-container .experiment-marke
     font-weight: 800 !important;
     line-height: 1.4 !important;
 }
+
+/* ==========================================
+   8. 로딩/검색 상태 메시지
+   ========================================== */
+[data-testid="stSpinner"] {
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 0.75rem !important;
+    background: #FFFFFF !important;
+    border: 1px solid #E2E8F0 !important;
+    border-radius: 16px !important;
+    padding: 1rem 1.25rem !important;
+    margin: 0.75rem 0 1rem 0 !important;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06) !important;
+}
+
+[data-testid="stSpinner"] > div:first-child {
+    border-color: #5A8CFF rgba(90, 140, 255, 0.18) rgba(90, 140, 255, 0.18) !important;
+}
+
+[data-testid="stSpinner"] p {
+    color: #1C244B !important;
+    font-size: 1.02rem !important;
+    font-weight: 800 !important;
+    margin: 0 !important;
+}
