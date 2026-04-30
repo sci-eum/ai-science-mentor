@@ -298,18 +298,12 @@ def render_open_lab_card(lab):
         """, unsafe_allow_html=True)
 
         homepage_url = lab.get("homepage_url")
-        program_url = lab.get("program_url")
-        c1, c2, c3 = st.columns([2, 2, 4])
+        c1, c2 = st.columns([2, 6])
         with c1:
             if homepage_url:
                 st.link_button("홈페이지 보기", homepage_url, use_container_width=True)
             else:
                 st.button("홈페이지 없음", disabled=True, use_container_width=True, key=f"openlab_home_none_{lab_key}")
-        with c2:
-            if program_url:
-                st.link_button("상세 정보", program_url, use_container_width=True)
-            else:
-                st.button("상세 링크 없음", disabled=True, use_container_width=True, key=f"openlab_program_none_{lab_key}")
 
 # ==========================================
 # 2. 전역 상태(Session State) 초기화
