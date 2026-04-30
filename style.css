@@ -242,7 +242,8 @@ div[data-testid="stVerticalBlock"]:has(> div.element-container .search-marker) d
     font-size: 0.94rem;
     font-weight: 600;
     line-height: 1.55;
-    margin-bottom: 0.65rem;
+    margin-top: 0.65rem;
+    margin-bottom: 0;
 }
 
 /* 실험 설계 전용 입력 필드 (하얀 배경) */
