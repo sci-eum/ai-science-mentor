@@ -309,6 +309,7 @@ div[data-testid="stVerticalBlock"]:has(> div.element-container .experiment-marke
 .badge-note { background-color: #5A8CFF; }
 .badge-topic { background-color: #10B981; }
 .badge-manual { background-color: #7C3AED; }
+.badge-openlab { background-color: #0F9F6E; }
 
 .paper-title {
     font-size: 1.3rem;
@@ -489,6 +490,101 @@ div[data-testid="stVerticalBlock"]:has(> div.element-container .experiment-marke
     -webkit-line-clamp: unset;
     line-clamp: unset;
     white-space: pre-wrap;
+}
+
+/* ==========================================
+   7. 주변 오픈랩
+   ========================================== */
+.openlab-hero {
+    background: linear-gradient(-45deg, #0B0F19, #1C244B, #315C80, #1E1B4B);
+    background-size: 400% 400%;
+    animation: aurora 15s ease infinite;
+    padding: 3rem 2rem 2.5rem 2rem;
+    border-radius: 24px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+    margin-bottom: 1.5rem;
+    text-align: center;
+}
+
+.openlab-hero h2 {
+    color: white;
+    font-size: 2.2rem;
+    font-weight: 900;
+    margin: 0 0 0.75rem 0;
+}
+
+.openlab-hero p {
+    color: rgba(255, 255, 255, 0.76);
+    font-size: 1.05rem;
+    margin: 0;
+}
+
+.openlab-school-card {
+    background: #FFFFFF;
+    border: 1px solid #E2E8F0;
+    border-radius: 18px;
+    padding: 1.5rem;
+    margin-bottom: 1rem;
+    box-shadow: 0 6px 20px rgba(15, 23, 42, 0.04);
+}
+
+.openlab-stat-card {
+    background: #FFFFFF;
+    border: 1px solid #E2E8F0;
+    border-radius: 16px;
+    padding: 1.25rem;
+    margin: 0.5rem 0 1.4rem 0;
+    box-shadow: 0 6px 20px rgba(15, 23, 42, 0.04);
+}
+
+.openlab-stat-card span {
+    display: block;
+    color: #64748B;
+    font-size: 0.9rem;
+    font-weight: 700;
+    margin-bottom: 0.35rem;
+}
+
+.openlab-stat-card strong {
+    color: #1C244B;
+    font-size: 1.9rem;
+    font-weight: 900;
+    line-height: 1;
+}
+
+.openlab-group-title {
+    color: #1C244B;
+    font-size: 1.3rem;
+    font-weight: 900;
+    margin: 1.4rem 0 0.75rem 0;
+    padding-left: 0.75rem;
+    border-left: 5px solid #0F9F6E;
+}
+
+.openlab-card-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 0.35rem;
+}
+
+.openlab-distance {
+    color: #0F766E;
+    background: #ECFDF5;
+    border: 1px solid #A7F3D0;
+    border-radius: 999px;
+    padding: 5px 12px;
+    font-size: 0.78rem;
+    font-weight: 900;
+    white-space: nowrap;
+}
+
+.openlab-address {
+    color: #475569;
+    font-size: 0.92rem;
+    font-weight: 600;
+    margin-bottom: 0.9rem;
 }
 
 [data-testid="stExpander"] {
