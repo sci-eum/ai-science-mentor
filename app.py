@@ -801,12 +801,40 @@ elif menu == "주변 진로체험처":
             stat_region.markdown(f"<div class='openlab-stat-card'><span>같은 도</span><strong>{province_count}</strong></div>", unsafe_allow_html=True)
             stat_national.markdown(f"<div class='openlab-stat-card'><span>전국</span><strong>{national_count}</strong></div>", unsafe_allow_html=True)
 
-            local_labs = [lab for lab in labs if lab.get("area_rank") == 0]
-            if not local_labs:
-                st.warning("현재 학교와 같은 시/군/구에 등록된 진로체험처가 없습니다.")
+            scope = st.radio(
+                "추천 범위",
+                ["같은 시/군/구", "같은 도", "전국"],
+                horizontal=True,
+                label_visibility="collapsed",
+                key="openlab_scope",
+            )
+
+            if scope == "같은 시/군/구":
+                scoped_labs = [lab for lab in labs if lab.get("area_rank") == 0]
+                empty_message = "현재 학교와 같은 시/군/구에 등록된 진로체험처가 없습니다."
+                group_title = "해당 시/군/구"
+            elif scope == "같은 도":
+                scoped_labs = [lab for lab in labs if lab.get("area_rank") in (0, 1)]
+                empty_message = "현재 학교와 같은 도에 등록된 진로체험처가 없습니다."
+                group_title = "같은 도"
+            else:
+                scoped_labs = labs
+                empty_message = "표시할 전국 진로체험처가 없습니다."
+                group_title = "전국"
+
+            scoped_labs = sorted(
+                scoped_labs,
+                key=lambda lab: (
+                    lab["distance_km"] if lab.get("distance_km") is not None else 9999,
+                    lab.get("name") or "",
+                ),
+            )
+
+            if not scoped_labs:
+                st.warning(empty_message)
             else:
                 page_size = 5
-                total_pages = (len(local_labs) + page_size - 1) // page_size
+                total_pages = (len(scoped_labs) + page_size - 1) // page_size
                 page_options = [str(page) for page in range(1, total_pages + 1)]
                 page_choice = st.radio(
                     "페이지",
@@ -819,8 +847,8 @@ elif menu == "주변 진로체험처":
                 start = page_index * page_size
                 end = start + page_size
 
-                st.markdown("<div class='openlab-group-title'>해당 시/군/구</div>", unsafe_allow_html=True)
-                for lab in local_labs[start:end]:
+                st.markdown(f"<div class='openlab-group-title'>{escape(group_title)}</div>", unsafe_allow_html=True)
+                for lab in scoped_labs[start:end]:
                     render_open_lab_card(lab)
 
 # ==========================================
