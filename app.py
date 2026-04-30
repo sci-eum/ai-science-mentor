@@ -396,13 +396,18 @@ else:
         st.rerun()
 
 st.sidebar.markdown("---")
-api_key = st.sidebar.text_input("Gemini API Key:", type="password")
 model = None
+gemini_api_key = None
+
+try:
+    gemini_api_key = st.secrets.get("GEMINI_API_KEY")
+except Exception:
+    gemini_api_key = None
 
 # ✨ AI 모델 자동 탐색 (gemini-1.5-flash 최우선 적용)
-if api_key:
+if gemini_api_key:
     try:
-        genai.configure(api_key=api_key)
+        genai.configure(api_key=gemini_api_key)
         available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
         
         # 1.5-flash 모델이 있다면 가장 먼저 선택 (무료 한도가 넉넉함)
@@ -412,6 +417,8 @@ if api_key:
             model = genai.GenerativeModel(available_models[0])
     except Exception as e: 
         st.sidebar.error(f"API 설정 오류: {e}")
+else:
+    st.sidebar.info("Gemini API 키가 Secrets에 설정되지 않았습니다.")
 
 # ==========================================
 # 🕹️ 상단 네비게이션
@@ -530,7 +537,7 @@ elif menu == "논문 찾기":
             st.markdown("### 💡 AI 탐구 주제 제안")
             
             if not model:
-                st.warning("👈 왼쪽 메뉴에서 API Key를 입력해주세요.")
+                st.warning("Gemini API 키가 아직 설정되지 않았습니다. Streamlit Secrets에 GEMINI_API_KEY를 추가해 주세요.")
             else:
                 btn_text = "✨ 주제 추천받기" if not st.session_state.ai_topics_list else "🔄 새로운 주제 추가로 받기"
                 
@@ -681,8 +688,8 @@ elif menu == "실험 설계":
     if submit_clicked:
         if not topic:
             st.error("❗ 탐구 주제는 필수 입력 사항입니다.")
-        elif not api_key or model is None:
-            st.error("❗ 왼쪽 사이드바에서 API Key를 먼저 입력해 주세요.")
+        elif not gemini_api_key or model is None:
+            st.error("❗ Streamlit Secrets에 GEMINI_API_KEY를 먼저 설정해 주세요.")
         else:
             with st.spinner("AI가 안전 수칙을 검토하며 체계적인 매뉴얼을 작성 중입니다..."):
                 prompt = f"""
