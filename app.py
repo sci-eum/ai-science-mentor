@@ -469,13 +469,13 @@ elif menu == "논문 찾기":
         
         col1, col2, col3, col4 = st.columns([1.5, 6, 1.5, 1.5]) 
         with col2:
+            keyword = st.text_input("검색어 입력", placeholder="", label_visibility="collapsed")
             st.markdown("""
                 <div class="search-guide">
                     <div>키워드 중심으로 짧고 구체적으로 입력하면 논문을 더 잘 찾을 수 있습니다.</div>
                     <div>영어 키워드로 검색하면 더 많은 해외 논문이 검색됩니다.</div>
                 </div>
             """, unsafe_allow_html=True)
-            keyword = st.text_input("검색어 입력", placeholder="", label_visibility="collapsed")
         with col3:
             search_clicked = st.button("검색", use_container_width=True, type="primary")
 
