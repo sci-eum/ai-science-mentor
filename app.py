@@ -277,6 +277,7 @@ def render_open_lab_card(lab):
     with st.container(border=True):
         distance = lab.get("distance_km")
         distance_text = f"{distance:.1f}km" if distance is not None else "거리 계산 전"
+        area_group = escape(str(lab.get("area_group") or "추천"))
         category = escape(str(lab.get("category") or "오픈랩"))
         title = escape(str(lab.get("name") or "이름 미상"))
         host = escape(str(lab.get("host_org") or "운영기관 정보 없음"))
@@ -285,9 +286,13 @@ def render_open_lab_card(lab):
         description = escape(str(lab.get("description") or "공개된 프로그램 정보를 확인해 보세요."))
 
         st.markdown(f"""
-            <div class="paper-source-badge badge-arxiv">{category}</div>
+            <div class="openlab-card-head">
+                <span class="paper-source-badge badge-openlab">{category}</span>
+                <span class="openlab-distance">{area_group} · {distance_text}</span>
+            </div>
             <div class="paper-title">{title}</div>
-            <div class="paper-authors">🏛️ {host} | 📍 {address} | 학교 기준 {distance_text}</div>
+            <div class="paper-authors">🏛️ {host}</div>
+            <div class="openlab-address">📍 {address}</div>
             <div class="paper-abstract"><strong>대상:</strong> {target}<br>{description}</div>
         """, unsafe_allow_html=True)
 
@@ -737,8 +742,13 @@ elif menu == "실험 설계":
 # 🧭 4. 주변 오픈랩
 # ==========================================
 elif menu == "주변 오픈랩":
-    st.title("🧭 학교 주변 오픈랩")
-    st.caption("프로필에 저장된 학교 위치를 기준으로 과학교육원, 과학관, 대학교 오픈랩 프로그램을 추천합니다.")
+    st.markdown("""
+        <div class="openlab-hero">
+            <span class="openlab-marker"></span>
+            <h2>🧭 학교 주변 오픈랩</h2>
+            <p>학교 위치를 기준으로 과학관, 과학교육원, 대학 오픈랩 프로그램을 가까운 순서로 정리합니다.</p>
+        </div>
+    """, unsafe_allow_html=True)
 
     if not st.session_state.user:
         st.warning("왼쪽 사이드바에서 로그인하면 학교 위치 기반 추천을 볼 수 있습니다.")
@@ -746,7 +756,13 @@ elif menu == "주변 오픈랩":
         st.warning("먼저 '내 연구 노트'에서 학교 프로필을 설정해 주세요.")
     else:
         school = st.session_state.school
-        st.info(f"기준 학교: {school.get('name')} | {school.get('address') or '주소 정보 없음'}")
+        st.markdown(f"""
+            <div class="openlab-school-card">
+                <span class="paper-source-badge badge-openlab">기준 학교</span>
+                <div class="note-profile-title">{escape(str(school.get('name') or '학교 정보 없음'))}</div>
+                <div class="paper-authors">📍 {escape(str(school.get('address') or '주소 정보 없음'))}</div>
+            </div>
+        """, unsafe_allow_html=True)
 
         if not school.get("lat") or not school.get("lng"):
             with st.spinner("학교 주소를 좌표로 변환해 다시 저장하는 중입니다..."):
@@ -767,12 +783,20 @@ elif menu == "주변 오픈랩":
         elif not labs:
             st.warning("표시할 오픈랩을 찾지 못했습니다. open_labs 데이터를 추가해 주세요.")
         else:
-            st.success(f"{len(labs)}개의 오픈랩/체험 프로그램을 찾았습니다.")
+            local_count = sum(1 for lab in labs if lab.get("area_rank") == 0)
+            region_count = sum(1 for lab in labs if lab.get("area_rank") == 1)
+            national_count = sum(1 for lab in labs if lab.get("area_rank") == 2)
+            stat_all, stat_local, stat_region, stat_national = st.columns(4)
+            stat_all.markdown(f"<div class='openlab-stat-card'><span>전체 추천</span><strong>{len(labs)}</strong></div>", unsafe_allow_html=True)
+            stat_local.markdown(f"<div class='openlab-stat-card'><span>시/군/구</span><strong>{local_count}</strong></div>", unsafe_allow_html=True)
+            stat_region.markdown(f"<div class='openlab-stat-card'><span>같은 시도</span><strong>{region_count}</strong></div>", unsafe_allow_html=True)
+            stat_national.markdown(f"<div class='openlab-stat-card'><span>전국</span><strong>{national_count}</strong></div>", unsafe_allow_html=True)
+
             current_group = None
             for lab in labs:
                 if lab.get("area_group") != current_group:
                     current_group = lab.get("area_group")
-                    st.markdown(f"### {current_group}")
+                    st.markdown(f"<div class='openlab-group-title'>{escape(str(current_group))}</div>", unsafe_allow_html=True)
                 render_open_lab_card(lab)
 
 # ==========================================
