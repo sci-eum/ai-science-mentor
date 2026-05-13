@@ -545,6 +545,23 @@ if gemini_api_key:
 else:
     st.sidebar.info("Gemini API 키가 Secrets에 설정되지 않았습니다.")
 
+st.sidebar.markdown("""
+    <div class="sidebar-footer">
+        <div class="sidebar-footer-text">Made by <strong>sci-eum</strong></div>
+        <a
+            class="sidebar-instagram-link"
+            href="https://www.instagram.com/sci_eum?igsh=MXFiemh3a2RtZHo0eA=="
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="sci-eum Instagram"
+        >
+            <svg viewBox="0 0 24 24" role="img" aria-hidden="true">
+                <path fill="currentColor" d="M7.75 2h8.5A5.76 5.76 0 0 1 22 7.75v8.5A5.76 5.76 0 0 1 16.25 22h-8.5A5.76 5.76 0 0 1 2 16.25v-8.5A5.76 5.76 0 0 1 7.75 2Zm0 2A3.75 3.75 0 0 0 4 7.75v8.5A3.75 3.75 0 0 0 7.75 20h8.5A3.75 3.75 0 0 0 20 16.25v-8.5A3.75 3.75 0 0 0 16.25 4h-8.5ZM12 7.25A4.75 4.75 0 1 1 12 16.75 4.75 4.75 0 0 1 12 7.25Zm0 2A2.75 2.75 0 1 0 12 14.75 2.75 2.75 0 0 0 12 9.25Zm5-2.1a1.1 1.1 0 1 1 0 2.2 1.1 1.1 0 0 1 0-2.2Z"/>
+            </svg>
+        </a>
+    </div>
+""", unsafe_allow_html=True)
+
 # ==========================================
 # 🕹️ 상단 네비게이션
 # ==========================================
