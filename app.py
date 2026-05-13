@@ -209,6 +209,54 @@ def build_school_profile(profile):
         "lng": profile.get("school_lng"),
     }
 
+def save_school_profile(user_id, school_name, school_code, school_address):
+    school = {
+        "name": school_name,
+        "code": school_code,
+        "address": school_address,
+        "region": extract_region(school_address),
+        "city": extract_city(school_address),
+        "lat": None,
+        "lng": None,
+    }
+
+    base_profile = {
+        "id": user_id,
+        "role": "연구자",
+        "school_code": school_code,
+        "school_name": school_name,
+    }
+
+    full_profile = {
+        **base_profile,
+        "school_address": school_address,
+        "school_region": school["region"],
+    }
+
+    try:
+        supabase.table("user_profiles").upsert(full_profile).execute()
+    except Exception:
+        supabase.table("user_profiles").upsert(base_profile).execute()
+
+    try:
+        school_lat, school_lng = geocode_address(school_address, school_name)
+        if school_lat and school_lng:
+            school["lat"] = school_lat
+            school["lng"] = school_lng
+            try:
+                supabase.table("user_profiles").update({
+                    "school_address": school_address,
+                    "school_region": school["region"],
+                    "school_lat": school_lat,
+                    "school_lng": school_lng,
+                }).eq("id", user_id).execute()
+            except Exception:
+                pass
+    except Exception as e:
+        st.caption(f"학교 위치 좌표는 나중에 다시 계산됩니다: {e}")
+
+    return school
+
 def parse_research_topics(response_text):
     """Gemini 응답 형식이 조금 흔들려도 추천 주제를 최대한 복구한다."""
     if not response_text:
@@ -988,41 +1036,19 @@ elif menu == "내 연구 노트":
                         with col2:
                             if st.button("선택", key=f"profile_school_{s_code}_{idx}", use_container_width=True):
                                 try:
-                                    school_lat, school_lng = geocode_address(s_addr, s_name)
-                                    profile = {
-                                        "id": st.session_state.user.id,
-                                        "role": "연구자",
-                                        "school_code": s_code,
-                                        "school_name": s_name,
-                                        "school_address": s_addr,
-                                        "school_region": extract_region(s_addr),
-                                        "school_lat": school_lat,
-                                        "school_lng": school_lng,
-                                    }
-                                    try:
-                                        supabase.table("user_profiles").upsert(profile).execute()
-                                    except Exception:
-                                        legacy_profile = {
-                                            "id": st.session_state.user.id,
-                                            "role": "연구자",
-                                            "school_code": s_code,
-                                            "school_name": s_name,
-                                        }
-                                        supabase.table("user_profiles").upsert(legacy_profile).execute()
-                                        st.warning("위치 컬럼이 아직 없어 기본 프로필만 저장했습니다. Supabase 마이그레이션을 적용하면 주변 진로체험처 추천이 활성화됩니다.")
-                                    st.session_state.role, st.session_state.school = "연구자", {
-                                        "name": s_name,
-                                        "code": s_code,
-                                        "address": s_addr,
-                                        "region": extract_region(s_addr),
-                                        "city": extract_city(s_addr),
-                                        "lat": school_lat,
-                                        "lng": school_lng,
-                                    }
+                                    selected_school = save_school_profile(
+                                        st.session_state.user.id,
+                                        s_name,
+                                        s_code,
+                                        s_addr,
+                                    )
+                                    st.session_state.role = "연구자"
+                                    st.session_state.school = selected_school
                                     st.session_state.search_results = None
                                     st.session_state.profile_edit = False
                                     st.rerun()
-                                except: st.error("저장 실패")
+                                except Exception as e:
+                                    st.error(f"저장 실패: {e}")
         else:
             st.markdown(f"""
                 <div class="note-profile-summary">
