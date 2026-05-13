@@ -807,12 +807,8 @@ elif menu == "실험 설계":
         st.markdown('<span class="experiment-marker"></span>', unsafe_allow_html=True)
         st.markdown("<h2 style='text-align: center; color: white; margin-bottom: 1.5rem;'>🧪 실험 매뉴얼 설계 AI</h2>", unsafe_allow_html=True)
         
-        topic_col, guide_col = st.columns([5, 1.6])
-        with topic_col:
-            st.markdown("<span class='label-essential'>🎯 탐구 주제 (필수)</span>", unsafe_allow_html=True)
-            topic = st.text_input("topic", placeholder="비타민 C 항산화 반응 속도 측정 등", label_visibility="collapsed")
-        with guide_col:
-            st.markdown("<div class='experiment-required-note'>필수 입력</div>", unsafe_allow_html=True)
+        st.markdown("<span class='label-essential'>🎯 탐구 주제 (필수)</span>", unsafe_allow_html=True)
+        topic = st.text_input("topic", placeholder="비타민 C 항산화 반응 속도 측정 등", label_visibility="collapsed")
 
         ind_var, dep_var, materials, idea_details = "", "", "", ""
         with st.expander("선택 입력 열기: 변인, 준비물, 상세 요청 사항", expanded=False):
