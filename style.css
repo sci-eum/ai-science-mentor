@@ -105,6 +105,48 @@ html, body, [class*="css"], .stApp {
     margin-bottom: 15px;
 }
 
+.sidebar-footer {
+    margin-top: 28px;
+    padding: 18px 10px 8px;
+    border-top: 1px solid rgba(255, 255, 255, 0.16);
+    text-align: center;
+}
+
+.sidebar-footer-text {
+    color: rgba(255, 255, 255, 0.72) !important;
+    font-size: 0.78rem;
+    letter-spacing: 0.02em;
+    margin-bottom: 10px;
+}
+
+.sidebar-footer-text strong {
+    color: white !important;
+    font-weight: 900;
+}
+
+.sidebar-instagram-link {
+    width: 38px;
+    height: 38px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #F58529, #DD2A7B, #8134AF, #515BD4);
+    box-shadow: 0 8px 18px rgba(0, 0, 0, 0.18);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.sidebar-instagram-link:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 22px rgba(221, 42, 123, 0.28);
+}
+
+.sidebar-instagram-link img {
+    width: 20px;
+    height: 20px;
+    display: block;
+}
+
 /* ==========================================
    🌈 애니메이션 (오로라)
    ========================================== */
