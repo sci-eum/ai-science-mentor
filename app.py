@@ -1,6 +1,8 @@
 import streamlit as st
 import google.generativeai as genai
 import arxiv
+import json
+import re
 import requests
 from html import escape
 from math import atan2, cos, radians, sin, sqrt
@@ -207,6 +209,86 @@ def build_school_profile(profile):
         "lng": profile.get("school_lng"),
     }
 
+def parse_research_topics(response_text):
+    """Gemini 응답 형식이 조금 흔들려도 추천 주제를 최대한 복구한다."""
+    if not response_text:
+        return []
+
+    text = response_text.strip()
+
+    def clean_title(value, index):
+        title = re.sub(r"^[\s\-*#\d\.\)\[]+", "", str(value or "")).strip()
+        title = title.replace("제목:", "", 1).strip()
+        return title or f"추천 탐구 주제 {index}"
+
+    def clean_content(value):
+        content = str(value or "").strip()
+        content = re.sub(r"^\s*내용\s*[:：]\s*", "", content).strip()
+        return content or "상세 설명이 제공되지 않았습니다."
+
+    def normalize(items):
+        topics = []
+        seen = set()
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            title = clean_title(item.get("title") or item.get("제목"), len(topics) + 1)
+            content = clean_content(item.get("content") or item.get("내용") or item.get("description") or item.get("설명"))
+            key = re.sub(r"\W+", "", title.lower())
+            if key and key not in seen:
+                seen.add(key)
+                topics.append({"title": title, "content": content})
+        return topics
+
+    json_candidates = [text]
+    fenced = re.findall(r"```(?:json)?\s*(.*?)```", text, flags=re.DOTALL | re.IGNORECASE)
+    json_candidates.extend(fenced)
+    array_match = re.search(r"\[\s*\{.*?\}\s*\]", text, flags=re.DOTALL)
+    if array_match:
+        json_candidates.append(array_match.group(0))
+    object_match = re.search(r"\{\s*\"topics\"\s*:\s*\[.*?\]\s*\}", text, flags=re.DOTALL)
+    if object_match:
+        json_candidates.append(object_match.group(0))
+
+    for candidate in json_candidates:
+        try:
+            data = json.loads(candidate)
+            if isinstance(data, dict):
+                data = data.get("topics") or data.get("추천주제") or []
+            parsed = normalize(data if isinstance(data, list) else [])
+            if parsed:
+                return parsed
+        except Exception:
+            continue
+
+    blocks = []
+    tagged_blocks = re.findall(r"\[주제 시작\](.*?)(?:\[주제 종료\]|$)", text, flags=re.DOTALL)
+    if tagged_blocks:
+        blocks = tagged_blocks
+    else:
+        titled_blocks = re.split(r"(?=^\s*(?:[-*]|\d+[\.\)])?\s*제목\s*[:：])", text, flags=re.MULTILINE)
+        blocks = [block for block in titled_blocks if re.search(r"제목\s*[:：]", block)]
+
+    parsed = []
+    for block in blocks:
+        title_match = re.search(r"제목\s*[:：]\s*(.+)", block)
+        content_match = re.search(r"내용\s*[:：]\s*(.+)", block, flags=re.DOTALL)
+        if title_match:
+            title = clean_title(title_match.group(1), len(parsed) + 1)
+            content = clean_content(content_match.group(1) if content_match else block.replace(title_match.group(0), "", 1))
+            parsed.append({"title": title, "content": content})
+
+    if parsed:
+        return normalize(parsed)
+
+    paragraphs = [p.strip() for p in re.split(r"\n\s*\n", text) if p.strip()]
+    fallback = []
+    for paragraph in paragraphs[:2]:
+        lines = [line.strip("-* 0123456789.)") for line in paragraph.splitlines() if line.strip()]
+        if lines:
+            fallback.append({"title": clean_title(lines[0], len(fallback) + 1), "content": clean_content("\n".join(lines[1:]) or paragraph)})
+    return normalize(fallback)
+
 def update_school_coordinates_if_missing(school):
     if not st.session_state.get("user") or not school or school.get("lat") and school.get("lng"):
         return school, None
@@ -368,13 +450,13 @@ else:
         try:
             res = supabase.table("user_profiles").select("*").eq("id", st.session_state.user.id).execute()
             if res.data:
-                st.session_state.role = res.data[0]['role']
+                st.session_state.role = "연구자"
                 st.session_state.school = build_school_profile(res.data[0])
         except: pass
 
-    role_label = st.session_state.role if st.session_state.role else "연구원"
+    role_label = "연구자"
     school_label = st.session_state.school['name'] if st.session_state.school else "프로필 미설정"
-    avatar_icon = "🎓" if "학생" in role_label else "🔬"
+    avatar_icon = "🔬"
     
     st.sidebar.markdown(f"""
         <div class="profile-container">
@@ -546,12 +628,16 @@ elif menu == "논문 찾기":
                     with st.spinner("논문을 분석 중입니다..."):
                         prompt = f"""
                         다음 논문들을 참고해 창의적인 고등학생용 연구 주제 2개를 제안해줘.
-                        반드시 아래 형식을 정확히 지켜줘. (파싱을 위해 중요함)
-                        
-                        [주제 시작]
-                        제목: 주제 제목
-                        내용: 탐구 동기, 실험 방법, 기대 효과 등 상세 설명
-                        [주제 종료]
+                        반드시 JSON 배열만 출력해줘. 설명 문장이나 코드블록은 쓰지 마.
+                        각 항목은 title, content 키를 가진 객체여야 해.
+
+                        예시:
+                        [
+                          {{
+                            "title": "주제 제목",
+                            "content": "탐구 동기, 실험 방법, 기대 효과 등 상세 설명"
+                          }}
+                        ]
                         
                         논문 리스트: {[p['title'] for p in st.session_state.paper_results[:5]]}
                         """
@@ -561,15 +647,20 @@ elif menu == "논문 찾기":
                         try:
                             response = model.generate_content(prompt).text
                             st.session_state.past_topics.append(response)
-                            
-                            raw_topics = response.split("[주제 시작]")
-                            for rt in raw_topics:
-                                if "[주제 종료]" in rt:
-                                    clean_t = rt.split("[주제 종료]")[0].strip()
-                                    lines = clean_t.split('\n')
-                                    t_title = lines[0].replace("제목:", "").strip()
-                                    t_content = clean_t.replace(lines[0], "").replace("내용:", "").strip()
-                                    st.session_state.ai_topics_list.append({"title": t_title, "content": t_content})
+
+                            parsed_topics = parse_research_topics(response)
+                            if not parsed_topics:
+                                st.warning("AI 응답에서 추천 주제를 읽지 못했습니다. 다시 한 번 눌러 주세요.")
+                            else:
+                                existing_titles = {
+                                    re.sub(r"\W+", "", topic["title"].lower())
+                                    for topic in st.session_state.ai_topics_list
+                                }
+                                for topic in parsed_topics:
+                                    topic_key = re.sub(r"\W+", "", topic["title"].lower())
+                                    if topic_key not in existing_titles:
+                                        st.session_state.ai_topics_list.append(topic)
+                                        existing_titles.add(topic_key)
                         except Exception as e:
                             error_msg = str(e)
                             if "429" in error_msg or "Quota" in error_msg:
@@ -694,9 +785,9 @@ elif menu == "실험 설계":
         else:
             with st.spinner("AI가 안전 수칙을 검토하며 체계적인 매뉴얼을 작성 중입니다..."):
                 prompt = f"""
-                학생의 실험 아이디어를 바탕으로 고등학생 수준에 맞는 안전하고 구체적인 실험 매뉴얼을 작성해줘.
+                연구자의 실험 아이디어를 바탕으로 고등학생 수준에 맞는 안전하고 구체적인 실험 매뉴얼을 작성해줘.
                 
-                [학생 아이디어]
+                [연구 아이디어]
                 {combined_idea}
                 
                 [출력 형식 (반드시 아래 마크다운 헤더 형식을 지켜서 예쁘게 작성해줘)]
@@ -714,7 +805,7 @@ elif menu == "실험 설계":
                 [제약조건]
                 - 수치와 기구의 규격을 구체적으로 포함할 것.
                 - 절대 임의의 위험한 화학식이나 폭발/유독성 실험은 거부하고 안전한 대안을 제시할 것.
-                - 마지막 줄에 '> ⚠️ **교사 임장 지도 필수**' 라는 문구를 인용구 형태로 꼭 넣을 것.
+                - 마지막 줄에 '> ⚠️ **지도자 임장 지도 필수**' 라는 문구를 인용구 형태로 꼭 넣을 것.
                 """
                 if st.session_state.past_manuals: 
                     prompt += f"\n[중요] 이전 매뉴얼 내용과 다른 방식이나 조건을 추가해서 제안해줘:\n" + "\n".join(st.session_state.past_manuals)
@@ -870,9 +961,7 @@ elif menu == "내 연구 노트":
                 st.markdown('<span class="note-profile-marker"></span>', unsafe_allow_html=True)
                 st.markdown("<h3 class='note-section-title'>👋 프로필 설정</h3>", unsafe_allow_html=True)
                 st.markdown("<p class='note-section-caption'>학교 정보를 연결하면 주변 진로체험처 추천과 연구 노트 저장 기능을 더 정확하게 사용할 수 있어요.</p>", unsafe_allow_html=True)
-                role_col, search_col, button_col = st.columns([2, 5, 1.4])
-                with role_col:
-                    role = st.radio("역할", ["👨‍🎓 학생", "👨‍🏫 교사"], horizontal=True, label_visibility="collapsed")
+                search_col, button_col = st.columns([5, 1.4])
                 with search_col:
                     keyword = st.text_input("학교 이름 검색", placeholder="학교 이름을 입력하세요", label_visibility="collapsed")
                 with button_col:
@@ -902,7 +991,7 @@ elif menu == "내 연구 노트":
                                     school_lat, school_lng = geocode_address(s_addr, s_name)
                                     profile = {
                                         "id": st.session_state.user.id,
-                                        "role": role,
+                                        "role": "연구자",
                                         "school_code": s_code,
                                         "school_name": s_name,
                                         "school_address": s_addr,
@@ -915,13 +1004,13 @@ elif menu == "내 연구 노트":
                                     except Exception:
                                         legacy_profile = {
                                             "id": st.session_state.user.id,
-                                            "role": role,
+                                            "role": "연구자",
                                             "school_code": s_code,
                                             "school_name": s_name,
                                         }
                                         supabase.table("user_profiles").upsert(legacy_profile).execute()
                                         st.warning("위치 컬럼이 아직 없어 기본 프로필만 저장했습니다. Supabase 마이그레이션을 적용하면 주변 진로체험처 추천이 활성화됩니다.")
-                                    st.session_state.role, st.session_state.school = role, {
+                                    st.session_state.role, st.session_state.school = "연구자", {
                                         "name": s_name,
                                         "code": s_code,
                                         "address": s_addr,
@@ -940,7 +1029,7 @@ elif menu == "내 연구 노트":
                     <div>
                         <span class="paper-source-badge badge-note">현재 프로필</span>
                         <div class="note-profile-title">{escape(str(st.session_state.school.get('name')))}</div>
-                        <div class="paper-authors">{escape(str(st.session_state.role))} | {escape(str(st.session_state.school.get('address') or '주소 정보 없음'))}</div>
+                        <div class="paper-authors">연구자 | {escape(str(st.session_state.school.get('address') or '주소 정보 없음'))}</div>
                     </div>
                 </div>
             """, unsafe_allow_html=True)
@@ -950,80 +1039,77 @@ elif menu == "내 연구 노트":
                     st.session_state.profile_edit = True
                     st.rerun()
 
-            if "학생" in st.session_state.role:
-                saved_list, topic_list, manual_list = [], [], []
-                try:
-                    saved_list = supabase.table("saved_papers").select("*").eq("user_id", st.session_state.user.id).order("created_at", desc=True).execute().data or []
-                    topic_list = supabase.table("saved_topics").select("*").eq("user_id", st.session_state.user.id).order("created_at", desc=True).execute().data or []
-                    manual_list = supabase.table("saved_manuals").select("*").eq("user_id", st.session_state.user.id).order("created_at", desc=True).execute().data or []
-                except Exception:
-                    st.error("저장된 연구 노트를 불러오지 못했습니다.")
+            saved_list, topic_list, manual_list = [], [], []
+            try:
+                saved_list = supabase.table("saved_papers").select("*").eq("user_id", st.session_state.user.id).order("created_at", desc=True).execute().data or []
+                topic_list = supabase.table("saved_topics").select("*").eq("user_id", st.session_state.user.id).order("created_at", desc=True).execute().data or []
+                manual_list = supabase.table("saved_manuals").select("*").eq("user_id", st.session_state.user.id).order("created_at", desc=True).execute().data or []
+            except Exception:
+                st.error("저장된 연구 노트를 불러오지 못했습니다.")
 
-                stat_p, stat_t, stat_m = st.columns(3)
-                stat_p.markdown(f"<div class='note-stat-card'><span>저장된 논문</span><strong>{len(saved_list)}</strong></div>", unsafe_allow_html=True)
-                stat_t.markdown(f"<div class='note-stat-card'><span>추천 주제</span><strong>{len(topic_list)}</strong></div>", unsafe_allow_html=True)
-                stat_m.markdown(f"<div class='note-stat-card'><span>실험 매뉴얼</span><strong>{len(manual_list)}</strong></div>", unsafe_allow_html=True)
+            stat_p, stat_t, stat_m = st.columns(3)
+            stat_p.markdown(f"<div class='note-stat-card'><span>저장된 논문</span><strong>{len(saved_list)}</strong></div>", unsafe_allow_html=True)
+            stat_t.markdown(f"<div class='note-stat-card'><span>추천 주제</span><strong>{len(topic_list)}</strong></div>", unsafe_allow_html=True)
+            stat_m.markdown(f"<div class='note-stat-card'><span>실험 매뉴얼</span><strong>{len(manual_list)}</strong></div>", unsafe_allow_html=True)
 
-                tab_p, tab_t, tab_m = st.tabs(["📚 저장된 논문", "💡 추천 실험 주제", "📋 실험 매뉴얼"])
-                with tab_p:
-                    if not saved_list:
-                        st.markdown("<div class='note-empty'>아직 저장된 논문이 없습니다. 논문 찾기에서 관심 있는 자료를 저장해 보세요.</div>", unsafe_allow_html=True)
-                    for paper in saved_list:
-                        paper_title = str(paper.get('title') or '제목 없음')
-                        paper_year = str(paper.get('year') or '연도 미상')
-                        paper_source = str(paper.get('source') or 'Paper')
-                        paper_label_title = paper_title if len(paper_title) <= 80 else f"{paper_title[:80]}..."
-                        with st.expander(f"📚 {paper_label_title} · {paper_source} · {paper_year}", expanded=False):
-                            st.markdown(f"""
-                                <div class="paper-source-badge badge-arxiv">{escape(paper_source)} • {escape(paper_year)}</div>
-                                <div class="paper-title">{escape(paper_title)}</div>
-                                <div class="paper-authors">저자: {escape(str(paper.get('authors') or '정보 없음'))}</div>
-                                <div class="paper-abstract">{escape(str(paper.get('summary') or '초록 정보가 없습니다.'))}</div>
-                            """, unsafe_allow_html=True)
-                            link_col, delete_col, _ = st.columns([2, 1.2, 5])
-                            with link_col:
-                                st.link_button("📄 원문 링크", paper['url'], use_container_width=True)
-                            with delete_col:
-                                if st.button("🗑️ 삭제", key=f"del_p_{paper['id']}", use_container_width=True):
-                                    supabase.table("saved_papers").delete().eq("id", paper['id']).execute()
-                                    st.rerun()
-                with tab_t:
-                    if not topic_list:
-                        st.markdown("<div class='note-empty'>저장된 주제가 없습니다. 논문 분석 결과에서 탐구 주제를 저장하면 이곳에 쌓입니다.</div>", unsafe_allow_html=True)
-                    for topic in topic_list:
-                        topic_content = str(topic.get('topic_content') or '내용 없음')
-                        topic_date = str(topic.get('created_at') or '')[:10]
-                        topic_title = "추천 실험 주제"
-                        for line in topic_content.splitlines():
-                            clean_line = line.strip()
-                            if clean_line.startswith("제목:"):
-                                topic_title = clean_line.replace("제목:", "", 1).strip() or topic_title
-                                break
-                        topic_label_title = topic_title if len(topic_title) <= 80 else f"{topic_title[:80]}..."
-                        with st.expander(f"💡 {topic_label_title} · {topic_date}", expanded=False):
-                            st.markdown(f"""
-                                <div class="paper-source-badge badge-topic">추천 주제 • {escape(topic_date)}</div>
-                                <div class="paper-title">{escape(topic_title)}</div>
-                                <div class="paper-abstract note-full-text">{escape(topic_content)}</div>
-                            """, unsafe_allow_html=True)
-                            if st.button("🗑️ 삭제", key=f"del_t_{topic['id']}"):
-                                supabase.table("saved_topics").delete().eq("id", topic['id']).execute()
+            tab_p, tab_t, tab_m = st.tabs(["📚 저장된 논문", "💡 추천 실험 주제", "📋 실험 매뉴얼"])
+            with tab_p:
+                if not saved_list:
+                    st.markdown("<div class='note-empty'>아직 저장된 논문이 없습니다. 논문 찾기에서 관심 있는 자료를 저장해 보세요.</div>", unsafe_allow_html=True)
+                for paper in saved_list:
+                    paper_title = str(paper.get('title') or '제목 없음')
+                    paper_year = str(paper.get('year') or '연도 미상')
+                    paper_source = str(paper.get('source') or 'Paper')
+                    paper_label_title = paper_title if len(paper_title) <= 80 else f"{paper_title[:80]}..."
+                    with st.expander(f"📚 {paper_label_title} · {paper_source} · {paper_year}", expanded=False):
+                        st.markdown(f"""
+                            <div class="paper-source-badge badge-arxiv">{escape(paper_source)} • {escape(paper_year)}</div>
+                            <div class="paper-title">{escape(paper_title)}</div>
+                            <div class="paper-authors">저자: {escape(str(paper.get('authors') or '정보 없음'))}</div>
+                            <div class="paper-abstract">{escape(str(paper.get('summary') or '초록 정보가 없습니다.'))}</div>
+                        """, unsafe_allow_html=True)
+                        link_col, delete_col, _ = st.columns([2, 1.2, 5])
+                        with link_col:
+                            st.link_button("📄 원문 링크", paper['url'], use_container_width=True)
+                        with delete_col:
+                            if st.button("🗑️ 삭제", key=f"del_p_{paper['id']}", use_container_width=True):
+                                supabase.table("saved_papers").delete().eq("id", paper['id']).execute()
                                 st.rerun()
-                with tab_m:
-                    if not manual_list:
-                        st.markdown("<div class='note-empty'>저장된 매뉴얼이 없습니다. 실험 설계에서 만든 매뉴얼을 저장해 보세요.</div>", unsafe_allow_html=True)
-                    for manual in manual_list:
-                        manual_idea = str(manual.get('idea') or '원본 아이디어 없음')
-                        manual_label_title = manual_idea if len(manual_idea) <= 80 else f"{manual_idea[:80]}..."
-                        with st.expander(f"📋 {manual_label_title}", expanded=False):
-                            st.markdown(f"""
-                                <div class="paper-source-badge badge-manual">실험 매뉴얼</div>
-                                <div class="paper-title">{escape(manual_idea)}</div>
-                            """, unsafe_allow_html=True)
-                            st.markdown(manual.get('manual_content') or '내용 없음')
-                            st.divider()
-                            if st.button("🗑️ 삭제", key=f"del_m_{manual['id']}"):
-                                supabase.table("saved_manuals").delete().eq("id", manual['id']).execute()
-                                st.rerun()
-            else:
-                st.markdown(f"<div class='note-empty'><strong>{escape(str(st.session_state.school['name']))}</strong> 학생 포트폴리오 열람 기능은 준비 중입니다.</div>", unsafe_allow_html=True)
+            with tab_t:
+                if not topic_list:
+                    st.markdown("<div class='note-empty'>저장된 주제가 없습니다. 논문 분석 결과에서 탐구 주제를 저장하면 이곳에 쌓입니다.</div>", unsafe_allow_html=True)
+                for topic in topic_list:
+                    topic_content = str(topic.get('topic_content') or '내용 없음')
+                    topic_date = str(topic.get('created_at') or '')[:10]
+                    topic_title = "추천 실험 주제"
+                    for line in topic_content.splitlines():
+                        clean_line = line.strip()
+                        if clean_line.startswith("제목:"):
+                            topic_title = clean_line.replace("제목:", "", 1).strip() or topic_title
+                            break
+                    topic_label_title = topic_title if len(topic_title) <= 80 else f"{topic_title[:80]}..."
+                    with st.expander(f"💡 {topic_label_title} · {topic_date}", expanded=False):
+                        st.markdown(f"""
+                            <div class="paper-source-badge badge-topic">추천 주제 • {escape(topic_date)}</div>
+                            <div class="paper-title">{escape(topic_title)}</div>
+                            <div class="paper-abstract note-full-text">{escape(topic_content)}</div>
+                        """, unsafe_allow_html=True)
+                        if st.button("🗑️ 삭제", key=f"del_t_{topic['id']}"):
+                            supabase.table("saved_topics").delete().eq("id", topic['id']).execute()
+                            st.rerun()
+            with tab_m:
+                if not manual_list:
+                    st.markdown("<div class='note-empty'>저장된 매뉴얼이 없습니다. 실험 설계에서 만든 매뉴얼을 저장해 보세요.</div>", unsafe_allow_html=True)
+                for manual in manual_list:
+                    manual_idea = str(manual.get('idea') or '원본 아이디어 없음')
+                    manual_label_title = manual_idea if len(manual_idea) <= 80 else f"{manual_idea[:80]}..."
+                    with st.expander(f"📋 {manual_label_title}", expanded=False):
+                        st.markdown(f"""
+                            <div class="paper-source-badge badge-manual">실험 매뉴얼</div>
+                            <div class="paper-title">{escape(manual_idea)}</div>
+                        """, unsafe_allow_html=True)
+                        st.markdown(manual.get('manual_content') or '내용 없음')
+                        st.divider()
+                        if st.button("🗑️ 삭제", key=f"del_m_{manual['id']}"):
+                            supabase.table("saved_manuals").delete().eq("id", manual['id']).execute()
+                            st.rerun()
