@@ -19,7 +19,9 @@ html, body, [class*="css"], .stApp {
 }
 
 [data-testid="stSidebar"] [data-testid="stSidebarUserContent"] {
-    padding-bottom: 112px;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
 }
 
 /* 사이드바 글씨 흰색 고정 */
@@ -110,16 +112,12 @@ html, body, [class*="css"], .stApp {
 }
 
 .sidebar-footer {
-    position: fixed;
-    left: 16px;
-    bottom: 16px;
-    width: calc(21rem - 32px);
-    max-width: calc(100vw - 32px);
-    padding: 14px 10px 10px;
+    width: 100%;
+    box-sizing: border-box;
+    margin-top: auto;
+    padding: 18px 10px 6px;
     border-top: 1px solid rgba(255, 255, 255, 0.16);
     text-align: center;
-    background: #1C244B;
-    z-index: 999;
 }
 
 .sidebar-footer-text {
