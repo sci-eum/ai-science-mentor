@@ -567,14 +567,14 @@ if menu == "메인":
     st.markdown("""
         <div class="hero-container">
             <h1 style="color:white; font-size:3rem; font-weight:900;">🧬 AI SCIENCE ADVISOR</h1>
-            <p style="color:rgba(255,255,255,0.8); font-size:1.2rem;">세상을 바꾸는 당신의 위대한 탐구, AI가 지도를 그려드립니다.</p>
+            <p style="color:rgba(255,255,255,0.8); font-size:1.2rem;">세상을 바꾸는 당신의 과학 탐구, AI가 지도를 그려드립니다.</p>
         </div>
     """, unsafe_allow_html=True)
     c1, c2, c3, c4 = st.columns(4)
     features = [
-        ("🔍", "논문 검색", "글로벌 DB 통합 탐색"), 
-        ("🧪", "실험 설계", "AI 기반 안전 매뉴얼"), 
-        ("🧭", "주변 진로체험처", "학교 위치 기반 체험 추천"),
+        ("🔍", "논문 검색", "글로벌 DB 통합 탐색<br>논문 기반 AI 탐구 주제 제안"), 
+        ("🧪", "실험 설계", "탐구 주제 기반 AI 실험 매뉴얼 생성<br>실험 세부 사항 설정 가능"), 
+        ("🧭", "주변 진로체험처", "학교 위치 기반 거리순 체험처 추천"),
         ("🗄️", "연구 노트", "나만의 탐구 포트폴리오")
     ]
     for col, (i, t, d) in zip([c1, c2, c3, c4], features):
@@ -788,7 +788,7 @@ elif menu == "실험 설계":
     with st.container():
         # ✨ 여기에 CSS 마커를 삽입하여 다크 배경을 통일시킵니다!
         st.markdown('<span class="experiment-marker"></span>', unsafe_allow_html=True)
-        st.markdown("<h2 style='text-align: center; color: white; margin-bottom: 1.5rem;'>🧪 대화형 실험 설계 매뉴얼</h2>", unsafe_allow_html=True)
+        st.markdown("<h2 style='text-align: center; color: white; margin-bottom: 1.5rem;'>🧪 실험 설계 AI</h2>", unsafe_allow_html=True)
         
         topic_col, guide_col = st.columns([5, 1.6])
         with topic_col:
