@@ -788,7 +788,7 @@ elif menu == "실험 설계":
     with st.container():
         # ✨ 여기에 CSS 마커를 삽입하여 다크 배경을 통일시킵니다!
         st.markdown('<span class="experiment-marker"></span>', unsafe_allow_html=True)
-        st.markdown("<h2 style='text-align: center; color: white; margin-bottom: 1.5rem;'>🧪 실험 설계 AI</h2>", unsafe_allow_html=True)
+        st.markdown("<h2 style='text-align: center; color: white; margin-bottom: 1.5rem;'>🧪 실험 매뉴얼 설계 AI</h2>", unsafe_allow_html=True)
         
         topic_col, guide_col = st.columns([5, 1.6])
         with topic_col:
