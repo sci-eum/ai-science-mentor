@@ -574,8 +574,8 @@ if menu == "메인":
     features = [
         ("🔍", "논문 검색", "글로벌 DB 통합 탐색<br>논문 기반 AI 탐구 주제 제안"), 
         ("🧪", "실험 설계", "탐구 주제 기반 AI 실험 매뉴얼 생성<br>실험 세부 사항 설정 가능"), 
-        ("🧭", "주변 진로체험처", "학교 위치 기반 거리순 체험처 추천"),
-        ("🗄️", "연구 노트", "나만의 탐구 포트폴리오")
+        ("🧭", "주변 진로체험처", "학교 위치 기반 거리순 체험처 추천<br>공공기관, 대학, 과학관 등"),
+        ("🗄️", "연구 노트", "나만의 탐구 포트폴리오<br>논문, 탐구 주제, 실험 매뉴얼 저장")
     ]
     for col, (i, t, d) in zip([c1, c2, c3, c4], features):
         col.markdown(f"<div style='background:white; padding:2rem; border-radius:20px; text-align:center; box-shadow:0 10px 20px rgba(0,0,0,0.05);'><h3>{i} {t}</h3><p>{d}</p></div>", unsafe_allow_html=True)
