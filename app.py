@@ -638,6 +638,33 @@ elif menu == "논문 찾기":
         with st.spinner(f'논문을 수집하는 중...'):
             papers_info = []
             def normalize_title(t): return ''.join(c.lower() for c in t if c.isalnum())
+            def add_paper(source, title, authors, year, summary, url):
+                clean_title = str(title or "").strip()
+                clean_url = str(url or "").strip()
+                title_key = normalize_title(clean_title)
+                if not clean_title or not clean_url or not title_key or title_key in st.session_state.seen_titles:
+                    return
+                st.session_state.seen_titles.add(title_key)
+                papers_info.append({
+                    "source": source,
+                    "title": clean_title,
+                    "authors": authors or "정보 없음",
+                    "year": year or "연도 미상",
+                    "summary": summary or "요약이 제공되지 않는 논문입니다.",
+                    "url": clean_url,
+                })
+
+            def clean_html(text):
+                return re.sub(r"<[^>]+>", "", str(text or "")).strip()
+
+            def openalex_abstract(inverted_index):
+                if not inverted_index:
+                    return None
+                words = []
+                for word, positions in inverted_index.items():
+                    for position in positions:
+                        words.append((position, word))
+                return " ".join(word for _, word in sorted(words))
 
             try:
                 arxiv_max = (page + 1) * 3
@@ -649,22 +676,61 @@ elif menu == "논문 찾기":
                 client = arxiv.Client()
                 new_arxivs = list(client.results(search))[page * 3 : arxiv_max] 
                 for r in new_arxivs:
-                    if normalize_title(r.title) not in st.session_state.seen_titles:
-                        st.session_state.seen_titles.add(normalize_title(r.title))
-                        papers_info.append({"source": "ArXiv", "title": r.title, "authors": ", ".join([a.name for a in r.authors]), "year": r.published.year, "summary": r.summary.replace('\n', ' '), "url": r.pdf_url})
+                    add_paper("ArXiv", r.title, ", ".join([a.name for a in r.authors]), r.published.year, r.summary.replace('\n', ' '), r.pdf_url)
             except: pass
 
             try:
                 url = f"https://api.crossref.org/works?query={keyword}&select=title,abstract,URL,author,published&rows=4&offset={page * 4}&sort={'relevance' if sort_type == '관련도순' else 'published'}"
                 for item in requests.get(url, timeout=5).json()['message']['items']:
                     title = item.get('title', [''])[0]
-                    if title and normalize_title(title) not in st.session_state.seen_titles:
-                        st.session_state.seen_titles.add(normalize_title(title))
-                        year = item.get('published', {}).get('date-parts', [[None]])[0][0] or "연도 미상"
-                        authors = ", ".join([f"{a.get('given', '')} {a.get('family', '')}".strip() for a in item.get('author', []) if f"{a.get('given', '')} {a.get('family', '')}".strip()]) or "정보 없음"
-                        summary_raw = item.get('abstract', '요약이 제공되지 않는 논문입니다.')
-                        summary_clean = summary_raw.replace('<jats:p>', '').replace('</jats:p>', '').replace('<jats:title>', '').replace('</jats:title>', '')
-                        papers_info.append({"source": "Crossref", "title": title, "authors": authors, "year": year, "summary": summary_clean, "url": item.get('URL', '')})
+                    year = item.get('published', {}).get('date-parts', [[None]])[0][0] or "연도 미상"
+                    authors = ", ".join([f"{a.get('given', '')} {a.get('family', '')}".strip() for a in item.get('author', []) if f"{a.get('given', '')} {a.get('family', '')}".strip()]) or "정보 없음"
+                    summary_raw = item.get('abstract', '요약이 제공되지 않는 논문입니다.')
+                    add_paper("Crossref", title, authors, year, clean_html(summary_raw), item.get('URL', ''))
+            except: pass
+
+            try:
+                params = {
+                    "search": keyword,
+                    "per-page": 4,
+                    "page": page + 1,
+                }
+                if sort_type != "관련도순":
+                    params["sort"] = "publication_date:desc"
+                response = requests.get("https://api.openalex.org/works", params=params, timeout=7)
+                for item in response.json().get("results", []):
+                    authorships = item.get("authorships", [])
+                    authors = ", ".join([
+                        author.get("author", {}).get("display_name", "")
+                        for author in authorships
+                        if author.get("author", {}).get("display_name")
+                    ]) or "정보 없음"
+                    location = item.get("primary_location") or {}
+                    open_access = item.get("open_access") or {}
+                    paper_url = location.get("landing_page_url") or open_access.get("oa_url") or item.get("doi") or item.get("id")
+                    summary = openalex_abstract(item.get("abstract_inverted_index")) or "요약이 제공되지 않는 논문입니다."
+                    add_paper("OpenAlex", item.get("display_name"), authors, item.get("publication_year"), summary, paper_url)
+            except: pass
+
+            try:
+                params = {
+                    "query": keyword,
+                    "limit": 4,
+                    "offset": page * 4,
+                    "fields": "title,authors,year,abstract,url,openAccessPdf,publicationDate",
+                }
+                if sort_type != "관련도순":
+                    params["sort"] = "publicationDate:desc"
+                response = requests.get("https://api.semanticscholar.org/graph/v1/paper/search", params=params, timeout=7)
+                for item in response.json().get("data", []):
+                    authors = ", ".join([
+                        author.get("name", "")
+                        for author in item.get("authors", [])
+                        if author.get("name")
+                    ]) or "정보 없음"
+                    open_pdf = item.get("openAccessPdf") or {}
+                    paper_url = open_pdf.get("url") or item.get("url")
+                    add_paper("Semantic Scholar", item.get("title"), authors, item.get("year"), item.get("abstract"), paper_url)
             except: pass
             
             st.session_state.paper_results.extend(papers_info) 
@@ -769,12 +835,17 @@ elif menu == "논문 찾기":
 
             for paper in st.session_state.paper_results:
                 with st.container(border=True): 
-                    badge_class = "badge-arxiv" if paper['source'] == "ArXiv" else "badge-crossref"
+                    badge_class = {
+                        "ArXiv": "badge-arxiv",
+                        "Crossref": "badge-crossref",
+                        "OpenAlex": "badge-openalex",
+                        "Semantic Scholar": "badge-semantic",
+                    }.get(paper['source'], "badge-crossref")
                     st.markdown(f"""
-                        <div class="paper-source-badge {badge_class}">{paper['source']} • {paper['year']}</div>
-                        <div class="paper-title">{paper['title']}</div>
-                        <div class="paper-authors">👨‍🔬 저자: {paper['authors']}</div>
-                        <div class="paper-abstract">{paper['summary']}</div>
+                        <div class="paper-source-badge {badge_class}">{escape(str(paper['source']))} • {escape(str(paper['year']))}</div>
+                        <div class="paper-title">{escape(str(paper['title']))}</div>
+                        <div class="paper-authors">👨‍🔬 저자: {escape(str(paper['authors']))}</div>
+                        <div class="paper-abstract">{escape(str(paper['summary']))}</div>
                     """, unsafe_allow_html=True)
                     
                     c1, c2, c3 = st.columns([3, 3, 4])
