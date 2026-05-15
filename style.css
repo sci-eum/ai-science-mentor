@@ -366,6 +366,8 @@ div[data-testid="stVerticalBlock"]:has(> div.element-container .experiment-marke
 }
 .badge-arxiv { background-color: #4F46E5; }   
 .badge-crossref { background-color: #F59E0B; } 
+.badge-openalex { background-color: #0EA5A4; }
+.badge-semantic { background-color: #8B5CF6; }
 .badge-note { background-color: #5A8CFF; }
 .badge-topic { background-color: #10B981; }
 .badge-manual { background-color: #7C3AED; }
